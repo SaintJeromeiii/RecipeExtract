@@ -2,7 +2,7 @@ import express from "express";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractRecipe } from "./extract.ts";
+import { extractRecipe, extractRecipeFromText } from "./extract.ts";
 import {
   addGroceryLines,
   clearCheckedGrocery,
@@ -52,6 +52,26 @@ app.post("/api/extract", async (req, res) => {
       error instanceof Error ? error.message : "Could not extract that recipe.";
     const status = message.includes("not allowed") ? 400 : 422;
     res.status(status).json({ error: message });
+  }
+});
+
+app.post("/api/extract-text", async (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text : "";
+  const sourceUrl =
+    typeof req.body?.sourceUrl === "string" && req.body.sourceUrl.trim()
+      ? req.body.sourceUrl.trim()
+      : "https://pasted.local/caption";
+  if (!text.trim()) {
+    res.status(400).json({ error: "Paste the recipe caption text to continue." });
+    return;
+  }
+  try {
+    const recipe = await extractRecipeFromText(text, sourceUrl);
+    res.json(recipe);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not parse that caption.";
+    res.status(422).json({ error: message });
   }
 });
 

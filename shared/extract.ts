@@ -1,4 +1,6 @@
-import type { Recipe } from "./types.ts";
+import type { Recipe } from "./types";
+import { recipeFromCaption } from "./captionRecipe";
+import { fetchOEmbedCaption, isSocialUrl } from "./social";
 
 const JUNK_LINE =
   /^(jump to|pin (this|it)|share this|advertisement|you may also|subscribe|related recipes|print recipe|save recipe|rate this|leave a comment|this post (contains|may contain)|affiliate|as an amazon|shop this|more recipes|don't miss|sign up)/i;
@@ -461,6 +463,23 @@ function parseJsonLdBlocks(html: string): unknown[] {
 
 export async function extractRecipe(sourceUrl: string): Promise<Recipe> {
   const url = assertSafeUrl(sourceUrl);
+
+  // Social posts: try public caption endpoints (TikTok oEmbed, etc.) before HTML fetch.
+  if (isSocialUrl(url.toString())) {
+    try {
+      const oembed = await fetchOEmbedCaption(url.toString());
+      if (oembed?.caption?.trim()) {
+        return recipeFromCaption(oembed.caption, url.toString(), {
+          title: oembed.title,
+          author: oembed.author,
+          image: oembed.image,
+        });
+      }
+    } catch {
+      // Fall through to HTML / richer server-side providers.
+    }
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   let response: Response;
@@ -474,12 +493,22 @@ export async function extractRecipe(sourceUrl: string): Promise<Recipe> {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("The recipe page took too long to load.");
     }
+    if (isSocialUrl(url.toString())) {
+      throw new Error(
+        "Couldn't read that social post from this device. Use Extract on a recipe blog URL, or paste the caption text.",
+      );
+    }
     throw new Error("Could not reach that URL. Check the address and your connection.");
   } finally {
     clearTimeout(timeout);
   }
 
   if (!response.ok) {
+    if (isSocialUrl(url.toString())) {
+      throw new Error(
+        "That social post blocked a direct fetch. Paste the caption text, or use the extractor service for Facebook/Instagram Reels.",
+      );
+    }
     throw new Error(httpErrorMessage(response.status));
   }
 

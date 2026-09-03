@@ -39,6 +39,8 @@ function recipeKey(recipe: Pick<Recipe, "sourceUrl">): string {
 
 export default function App() {
   const [url, setUrl] = useState("");
+  const [captionText, setCaptionText] = useState("");
+  const [inputMode, setInputMode] = useState<"url" | "caption">("url");
   const [view, setView] = useState<View>("home");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +119,43 @@ export default function App() {
       const data = (await response.json()) as Recipe & { error?: string };
       if (!response.ok) {
         throw new Error(data.error || "Could not extract that recipe.");
+      }
+      setRecipe(data);
+      setCheckedIngredients(new Set());
+      setDoneSteps(new Set());
+      setCookIndex(0);
+      setView("recipe");
+    } catch (err) {
+      setRecipe(null);
+      setView("home");
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function extractCaption(nextText = captionText) {
+    const trimmed = nextText.trim();
+    if (!trimmed) {
+      setError("Paste the recipe caption text to continue.");
+      return;
+    }
+    setCaptionText(trimmed);
+    setLoading(true);
+    setError(null);
+    setCookOpen(false);
+    try {
+      const response = await fetch("/api/extract-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: trimmed,
+          sourceUrl: url.trim() || undefined,
+        }),
+      });
+      const data = (await response.json()) as Recipe & { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || "Could not parse that caption.");
       }
       setRecipe(data);
       setCheckedIngredients(new Set());
@@ -364,20 +403,71 @@ export default function App() {
             <em> Cook the actual recipe.</em>
           </h1>
           <p className="lede">
-            RecipeExtract pulls the title, ingredients, and numbered steps out
-            of food-blog pages — no memoir, no ads, no “scroll for the card.”
+            Paste a recipe-blog URL, a Facebook / TikTok / Instagram Reel link,
+            or the caption text itself — we pull out ingredients and steps.
           </p>
-          <UrlForm
-            url={url}
-            loading={loading}
-            error={error}
-            onChange={setUrl}
-            onClear={() => {
-              setUrl("");
-              setError(null);
-            }}
-            onSubmit={() => extract()}
-          />
+          <div className="examples" style={{ marginBottom: "0.75rem" }}>
+            <button
+              type="button"
+              className={`chip${inputMode === "url" ? " is-on" : ""}`}
+              onClick={() => setInputMode("url")}
+            >
+              URL
+            </button>
+            <button
+              type="button"
+              className={`chip${inputMode === "caption" ? " is-on" : ""}`}
+              onClick={() => setInputMode("caption")}
+            >
+              Caption text
+            </button>
+          </div>
+          {inputMode === "url" ? (
+            <UrlForm
+              url={url}
+              loading={loading}
+              error={error}
+              onChange={setUrl}
+              onClear={() => {
+                setUrl("");
+                setError(null);
+              }}
+              onSubmit={() => extract()}
+            />
+          ) : (
+            <form
+              className="url-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void extractCaption();
+              }}
+            >
+              <textarea
+                value={captionText}
+                onChange={(event) => setCaptionText(event.target.value)}
+                placeholder={"Ingredients:\n1 cup flour\n...\n\nInstructions:\n1. Mix..."}
+                rows={8}
+                disabled={loading}
+              />
+              <div className="url-form-actions">
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={loading || !captionText}
+                  onClick={() => {
+                    setCaptionText("");
+                    setError(null);
+                  }}
+                >
+                  Clear
+                </button>
+                <button type="submit" disabled={loading}>
+                  {loading ? "Extracting…" : "Extract"}
+                </button>
+              </div>
+              {error && <p className="form-error">{error}</p>}
+            </form>
+          )}
           <div className="examples">
             <span>Try one</span>
             {EXAMPLES.map((example) => (
@@ -386,6 +476,7 @@ export default function App() {
                 className="chip"
                 disabled={loading}
                 onClick={() => {
+                  setInputMode("url");
                   setUrl(example.url);
                   void extract(example.url);
                 }}

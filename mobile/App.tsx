@@ -25,6 +25,7 @@ import {
   addGrocery,
   clearCheckedGrocery,
   extractRecipe,
+  extractRecipeFromCaption,
   listGrocery,
   listSavedRecipes,
   removeGrocery,
@@ -72,6 +73,8 @@ export default function App() {
 
 function AppInner() {
   const [url, setUrl] = useState("");
+  const [captionText, setCaptionText] = useState("");
+  const [inputMode, setInputMode] = useState<"url" | "caption">("url");
   const [view, setView] = useState<"home" | "recipe">("home");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +137,32 @@ function AppInner() {
     setCookOpen(false);
     try {
       const data = await extractRecipe(trimmed);
+      setRecipe(data);
+      setCheckedIngredients(new Set());
+      setDoneSteps(new Set());
+      setCookIndex(0);
+      setView("recipe");
+    } catch (err) {
+      setRecipe(null);
+      setView("home");
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function extractCaption(nextText = captionText) {
+    const trimmed = nextText.trim();
+    if (!trimmed) {
+      setError("Paste the recipe caption (ingredients + steps) to continue.");
+      return;
+    }
+    setCaptionText(trimmed);
+    setLoading(true);
+    setError(null);
+    setCookOpen(false);
+    try {
+      const data = await extractRecipeFromCaption(trimmed, url.trim() || undefined);
       setRecipe(data);
       setCheckedIngredients(new Set());
       setDoneSteps(new Set());
@@ -279,40 +308,77 @@ function AppInner() {
         <ScrollView contentContainerStyle={styles.hero} keyboardShouldPersistTaps="handled">
           <Text style={styles.eyebrow}>Skip the blog. Keep the recipe.</Text>
           <Text style={styles.title}>Paste a URL.</Text>
-          <Text style={styles.titleEm}>Cook the actual recipe.</Text>
+          <Text style={styles.titleEm}>Or a Reel caption.</Text>
+          <View style={styles.chips}>
+            <Pressable
+              style={[styles.chip, inputMode === "url" && styles.chipOn]}
+              onPress={() => setInputMode("url")}
+            >
+              <Text style={styles.chipText}>URL</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.chip, inputMode === "caption" && styles.chipOn]}
+              onPress={() => setInputMode("caption")}
+            >
+              <Text style={styles.chipText}>Caption text</Text>
+            </Pressable>
+          </View>
           <View style={styles.urlForm}>
-            <TextInput
-              value={url}
-              onChangeText={setUrl}
-              placeholder="https://example.com/your-favorite-recipe"
-              placeholderTextColor="#8d7f6e"
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              style={styles.input}
-              onSubmitEditing={() => void extract()}
-            />
+            {inputMode === "url" ? (
+              <TextInput
+                value={url}
+                onChangeText={setUrl}
+                placeholder="Recipe blog, Facebook Reel, TikTok…"
+                placeholderTextColor="#8d7f6e"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                style={styles.input}
+                onSubmitEditing={() => void extract()}
+              />
+            ) : (
+              <TextInput
+                value={captionText}
+                onChangeText={setCaptionText}
+                placeholder={"Ingredients:\n1 cup flour\n...\n\nInstructions:\n1. Mix..."}
+                placeholderTextColor="#8d7f6e"
+                multiline
+                style={[styles.input, styles.captionInput]}
+                textAlignVertical="top"
+              />
+            )}
             <View style={styles.formRow}>
               <Pressable
                 style={styles.ghost}
                 onPress={async () => {
                   const text = await Clipboard.getStringAsync();
-                  if (text) setUrl(text.trim());
+                  if (!text) return;
+                  if (inputMode === "url") setUrl(text.trim());
+                  else setCaptionText(text.trim());
                 }}
               >
                 <Text style={styles.ghostText}>Paste</Text>
               </Pressable>
               <Pressable
-                style={[styles.ghost, (!url || loading) && styles.disabled]}
-                disabled={!url || loading}
+                style={[
+                  styles.ghost,
+                  ((inputMode === "url" ? !url : !captionText) || loading) && styles.disabled,
+                ]}
+                disabled={(inputMode === "url" ? !url : !captionText) || loading}
                 onPress={() => {
-                  setUrl("");
+                  if (inputMode === "url") setUrl("");
+                  else setCaptionText("");
                   setError(null);
                 }}
               >
                 <Text style={styles.ghostText}>Clear</Text>
               </Pressable>
-              <Pressable style={styles.primary} onPress={() => void extract()}>
+              <Pressable
+                style={styles.primary}
+                onPress={() =>
+                  void (inputMode === "url" ? extract() : extractCaption())
+                }
+              >
                 <Text style={styles.primaryText}>{loading ? "Extracting…" : "Extract"}</Text>
               </Pressable>
             </View>
@@ -825,6 +891,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   input: { color: "#f4ead7", fontSize: 16, padding: 10 },
+  captionInput: { minHeight: 140 },
   formRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
   primary: { backgroundColor: "#e4572e", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12 },
   primaryText: { color: "#fff7ef", fontWeight: "700", textAlign: "center" },
