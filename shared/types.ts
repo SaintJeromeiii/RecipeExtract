@@ -38,6 +38,16 @@ export type RecipePatch = Partial<
   >
 >;
 
+export type GroceryCategory =
+  | "produce"
+  | "fruit"
+  | "meat"
+  | "seafood"
+  | "dairy"
+  | "bakery"
+  | "pantry"
+  | "other";
+
 export type GroceryItem = {
   id: string;
   key: string;
@@ -48,6 +58,7 @@ export type GroceryItem = {
   checked: boolean;
   recipeIds: string[];
   recipeTitles: string[];
+  category?: GroceryCategory;
 };
 
 export type ParsedIngredient = {

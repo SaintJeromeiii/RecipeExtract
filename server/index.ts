@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractRecipe, extractRecipeFromText } from "./extract.ts";
+import { isGroceryCategory } from "../shared/groceryCategories.ts";
 import {
   addGroceryLines,
   clearCheckedGrocery,
@@ -11,6 +12,7 @@ import {
   removeGroceryItem,
   removeRecipe,
   saveRecipe,
+  setGroceryCategory,
   setGroceryChecked,
   updateRecipe,
 } from "./store.ts";
@@ -135,12 +137,20 @@ app.post("/api/grocery", async (req, res) => {
 });
 
 app.patch("/api/grocery/:id", async (req, res) => {
-  if (typeof req.body?.checked !== "boolean") {
-    res.status(400).json({ error: "Send { checked: true or false }." });
+  const checked = typeof req.body?.checked === "boolean" ? req.body.checked : undefined;
+  const category = isGroceryCategory(req.body?.category) ? req.body.category : undefined;
+  if (checked === undefined && category === undefined) {
+    res.status(400).json({ error: "Send checked or a grocery category." });
     return;
   }
   try {
-    const item = await setGroceryChecked(String(req.params.id), req.body.checked);
+    let item;
+    if (checked !== undefined) {
+      item = await setGroceryChecked(String(req.params.id), checked);
+    }
+    if (category !== undefined) {
+      item = await setGroceryCategory(String(req.params.id), category);
+    }
     res.json(item);
   } catch (error) {
     const message =
@@ -179,7 +189,7 @@ function lanAddresses(): string[] {
 }
 
 app.listen(port, "0.0.0.0", () => {
-  console.log(`RecipeExtract API on http://127.0.0.1:${port}`);
+  console.log(`RecipeGuru API on http://127.0.0.1:${port}`);
   for (const address of lanAddresses()) {
     console.log(`Phone / Expo:     http://${address}:${port}`);
   }

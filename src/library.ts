@@ -1,4 +1,4 @@
-import type { GroceryItem, Recipe, RecipePatch, SavedRecipe } from "./types";
+import type { GroceryCategory, GroceryItem, Recipe, RecipePatch, SavedRecipe } from "./types";
 
 async function readJson<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T;
@@ -76,6 +76,18 @@ export async function setGroceryItemChecked(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ checked }),
+  });
+  return readJson<GroceryItem>(response);
+}
+
+export async function setGroceryItemCategory(
+  id: string,
+  category: GroceryCategory,
+): Promise<GroceryItem> {
+  const response = await fetch(`/api/grocery/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category }),
   });
   return readJson<GroceryItem>(response);
 }

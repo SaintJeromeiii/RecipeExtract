@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  groceryCategoryLabel,
+  groupGroceryItems,
+  nextGroceryCategory,
+} from "../shared/groceryCategories";
 import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingredients";
 import { recipeAsText } from "../shared/share-text";
 import { StepWithTimers, useCookTimers, useWakeLock } from "./kitchen";
@@ -10,6 +15,7 @@ import {
   removeGrocery,
   removeSavedRecipe,
   saveRecipe,
+  setGroceryItemCategory,
   setGroceryItemChecked,
   setRecipeFavorite,
   updateSavedRecipe,
@@ -381,7 +387,7 @@ export default function App() {
           <span className="brand-mark" aria-hidden="true">
             R
           </span>
-          RecipeExtract
+          RecipeGuru
         </button>
         <div className="topbar-actions">
           <button className="ghost" onClick={() => setGroceryOpen(true)}>
@@ -406,22 +412,23 @@ export default function App() {
             Paste a recipe-blog URL, a Facebook / TikTok / Instagram Reel link,
             or the caption text itself — we pull out ingredients and steps.
           </p>
-          <div className="examples" style={{ marginBottom: "0.75rem" }}>
-            <button
-              type="button"
-              className={`chip${inputMode === "url" ? " is-on" : ""}`}
-              onClick={() => setInputMode("url")}
-            >
-              URL
-            </button>
-            <button
-              type="button"
-              className={`chip${inputMode === "caption" ? " is-on" : ""}`}
-              onClick={() => setInputMode("caption")}
-            >
-              Caption text
-            </button>
-          </div>
+          <div className="composer">
+            <div className="mode-switch" role="tablist" aria-label="Paste type">
+              <button
+                type="button"
+                className={`mode-switch-btn${inputMode === "url" ? " is-on" : ""}`}
+                onClick={() => setInputMode("url")}
+              >
+                URL
+              </button>
+              <button
+                type="button"
+                className={`mode-switch-btn${inputMode === "caption" ? " is-on" : ""}`}
+                onClick={() => setInputMode("caption")}
+              >
+                Caption text
+              </button>
+            </div>
           {inputMode === "url" ? (
             <UrlForm
               url={url}
@@ -468,6 +475,7 @@ export default function App() {
               {error && <p className="form-error">{error}</p>}
             </form>
           )}
+          </div>
           <div className="examples">
             <span>Try one</span>
             {EXAMPLES.map((example) => (
@@ -579,6 +587,15 @@ export default function App() {
           onClose={() => setGroceryOpen(false)}
           onToggle={async (item) => {
             const updated = await setGroceryItemChecked(item.id, !item.checked);
+            setGrocery((current) =>
+              current.map((row) => (row.id === updated.id ? updated : row)),
+            );
+          }}
+          onCategory={async (item) => {
+            const updated = await setGroceryItemCategory(
+              item.id,
+              nextGroceryCategory(item.category),
+            );
             setGrocery((current) =>
               current.map((row) => (row.id === updated.id ? updated : row)),
             );
@@ -1170,15 +1187,18 @@ function GroceryPanel({
   items,
   onClose,
   onToggle,
+  onCategory,
   onRemove,
   onClear,
 }: {
   items: GroceryItem[];
   onClose: () => void;
   onToggle: (item: GroceryItem) => void;
+  onCategory: (item: GroceryItem) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
 }) {
+  const groups = groupGroceryItems(items);
   return (
     <div className="grocery" role="dialog" aria-label="Grocery list">
       <div className="grocery-card">
@@ -1193,28 +1213,46 @@ function GroceryPanel({
             Open a recipe and tap Add to grocery for unchecked ingredients.
           </p>
         ) : (
-          <ul className="grocery-list">
-            {items.map((item) => (
-              <li key={item.id} className={item.checked ? "is-done" : ""}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={item.checked}
-                    onChange={() => onToggle(item)}
-                  />
-                  <span>
-                    {item.label}
-                    {item.recipeTitles.length ? (
-                      <em> · {item.recipeTitles.join(", ")}</em>
-                    ) : null}
-                  </span>
-                </label>
-                <button className="text-btn" onClick={() => onRemove(item.id)}>
-                  Remove
-                </button>
-              </li>
+          <div className="grocery-list">
+            <p className="grocery-hint">Sorted by aisle. Tap a category to change it.</p>
+            {groups.map((group) => (
+              <section key={group.category} className="grocery-group">
+                <h3 className="grocery-group-title">{group.label}</h3>
+                <ul>
+                  {group.items.map((item) => (
+                    <li key={item.id} className={item.checked ? "is-done" : ""}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={item.checked}
+                          onChange={() => onToggle(item)}
+                        />
+                        <span>
+                          {item.label}
+                          {item.recipeTitles.length ? (
+                            <em> · {item.recipeTitles.join(", ")}</em>
+                          ) : null}
+                        </span>
+                      </label>
+                      <div className="grocery-item-actions">
+                        <button
+                          type="button"
+                          className="grocery-cat"
+                          onClick={() => onCategory(item)}
+                          title="Change category"
+                        >
+                          {groceryCategoryLabel(item.category)}
+                        </button>
+                        <button className="text-btn" onClick={() => onRemove(item.id)}>
+                          Remove
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </div>
         )}
         <button className="ghost" onClick={onClear}>
           Clear checked

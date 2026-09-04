@@ -1,3 +1,4 @@
+import { guessGroceryCategory, isGroceryCategory } from "./groceryCategories";
 import type { GroceryItem, ParsedIngredient } from "./types";
 
 const UNICODE: Record<string, number> = {
@@ -39,7 +40,7 @@ function parseLooseNumber(value: string): number | null {
 }
 
 export function parseIngredient(line: string): ParsedIngredient {
-  const raw = line.trim();
+  const raw = line.trim().replace(/^[-•*–]+\s+/, "");
   const match = raw.match(
     new RegExp(
       `^((?:\\d+\\s+)?(?:\\d+\\s*\\/\\s*\\d+|[\\d.]+|[¼½¾⅓⅔⅛⅜⅝⅞]|\\d+[¼½¾⅓⅔⅛⅜⅝⅞]))(?:\\s+(${UNIT_PATTERN}))?(?:\\s+|$)(.*)$`,
@@ -112,8 +113,46 @@ export function parseServings(value: string | null | undefined): number | null {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
-export function groceryKey(parsed: ParsedIngredient): string {
-  return `${parsed.name}|${parsed.unit ?? ""}`;
+const PREP_WORDS =
+  /\b(finely|roughly|freshly|fresh|large|small|medium|extra-?large|chopped|diced|minced|sliced|crushed|grated|optional|divided|plus more|to taste)\b/gi;
+
+function singularizeWord(word: string): string {
+  if (word.endsWith("ies") && word.length > 4) return `${word.slice(0, -3)}y`;
+  if (word.endsWith("oes") && word.length > 4) return word.slice(0, -2);
+  if (/(?:ses|xes|ches|shes)$/.test(word) && word.length > 4) return word.slice(0, -2);
+  if (word.endsWith("s") && !word.endsWith("ss") && word.length > 3) return word.slice(0, -1);
+  return word;
+}
+
+function pluralizeWord(word: string): string {
+  if (word.endsWith("s")) return word;
+  if (word.endsWith("y") && word.length > 2 && !/[aeiou]y$/i.test(word)) {
+    return `${word.slice(0, -1)}ies`;
+  }
+  if (word.endsWith("o") && word.length > 2) return `${word}es`;
+  if (/(?:s|x|ch|sh)$/.test(word)) return `${word}es`;
+  return `${word}s`;
+}
+
+export function normalizeGroceryName(name: string): string {
+  const value = name
+    .toLowerCase()
+    .replace(/\u00a0/g, " ")
+    .replace(/[*†‡]+/g, "")
+    .replace(/\([^)]*\)/g, " ")
+    .split(",")[0]
+    .replace(PREP_WORDS, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parts = value.split(" ").filter(Boolean);
+  if (parts.length) {
+    parts[parts.length - 1] = singularizeWord(parts[parts.length - 1]);
+  }
+  return parts.join(" ").trim();
+}
+
+export function groceryKey(parsed: { name: string; unit: string | null }): string {
+  return `${normalizeGroceryName(parsed.name)}|${parsed.unit ?? ""}`;
 }
 
 export function formatGroceryLabel(item: {
@@ -122,9 +161,19 @@ export function formatGroceryLabel(item: {
   name: string;
   raw?: string;
 }): string {
-  if (item.amount == null) return item.raw || item.name;
+  const name = normalizeGroceryName(item.name) || item.name;
+  if (item.amount == null) return item.raw || name;
   const unit = pluralizeUnit(item.amount, item.unit);
-  return [formatAmount(item.amount), unit, item.name].filter(Boolean).join(" ");
+  const displayName =
+    !unit && Math.abs(item.amount - 1) >= 0.02
+      ? name
+          .split(" ")
+          .map((part, index, parts) =>
+            index === parts.length - 1 ? pluralizeWord(part) : part,
+          )
+          .join(" ")
+      : name;
+  return [formatAmount(item.amount), unit, displayName].filter(Boolean).join(" ");
 }
 
 function pluralizeUnit(amount: number, unit: string | null): string | null {
@@ -154,12 +203,54 @@ export function mergeGroceryItem(
     : existing.recipeTitles;
   const next = {
     ...existing,
+    name: normalizeGroceryName(existing.name || incoming.name),
+    unit: existing.unit ?? incoming.unit,
     amount,
     recipeIds,
     recipeTitles,
     checked: false,
+    category: isGroceryCategory(existing.category)
+      ? existing.category
+      : guessGroceryCategory(normalizeGroceryName(existing.name || incoming.name)),
   };
-  return { ...next, label: formatGroceryLabel(next) };
+  return { ...next, key: groceryKey(next), label: formatGroceryLabel(next) };
+}
+
+export function compactGroceryList(items: GroceryItem[]): GroceryItem[] {
+  const merged: GroceryItem[] = [];
+  for (const item of items) {
+    const parsed = parseIngredient(item.label || item.name);
+    const incoming = {
+      amount: item.amount ?? parsed.amount,
+      unit: parsed.unit ?? item.unit,
+      name: normalizeGroceryName(parsed.name || item.name),
+      raw: item.label || parsed.raw,
+    };
+    const key = groceryKey(incoming);
+    const existing = merged.find((row) => row.key === key && !row.checked && !item.checked);
+    if (existing) {
+      const combined = mergeGroceryItem(existing, incoming);
+      combined.recipeIds = Array.from(new Set([...combined.recipeIds, ...item.recipeIds]));
+      combined.recipeTitles = Array.from(
+        new Set([...combined.recipeTitles, ...item.recipeTitles]),
+      );
+      combined.label = formatGroceryLabel(combined);
+      merged[merged.indexOf(existing)] = combined;
+    } else {
+      merged.push({
+        ...item,
+        key,
+        amount: incoming.amount,
+        unit: incoming.unit,
+        name: incoming.name,
+        label: formatGroceryLabel({ ...incoming, raw: item.label }),
+        category: isGroceryCategory(item.category)
+          ? item.category
+          : guessGroceryCategory(incoming.name),
+      });
+    }
+  }
+  return merged;
 }
 
 export function matchesQuery(

@@ -7,3 +7,5 @@ dist
 .env.local
 mobile/.expo
 mobile/expo-env.d.ts
+mobile/credentials.json
+mobile/credentials/

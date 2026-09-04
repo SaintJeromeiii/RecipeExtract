@@ -13,10 +13,14 @@ RUN npm ci
 
 COPY server ./server
 COPY shared ./shared
-COPY tsconfig.json ./
+COPY src ./src
+COPY public ./public
+COPY index.html vite.config.ts tsconfig.json tsconfig.node.json ./
 
 ENV NODE_ENV=production
 ENV PORT=8787
 EXPOSE 8787
+
+RUN npm run build
 
 CMD ["npx", "tsx", "server/index.ts"]

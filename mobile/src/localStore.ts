@@ -1,11 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { guessGroceryCategory } from "../../shared/groceryCategories";
 import {
+  compactGroceryList,
   formatGroceryLabel,
   groceryKey,
   mergeGroceryItem,
+  normalizeGroceryName,
   parseIngredient,
 } from "../../shared/ingredients";
 import type {
+  GroceryCategory,
   GroceryItem,
   Recipe,
   RecipePatch,
@@ -89,7 +93,7 @@ async function loadStore(): Promise<StoreFile> {
       recipes: Array.isArray(parsed.recipes)
         ? parsed.recipes.map(hydrateSaved).filter((item): item is SavedRecipe => Boolean(item))
         : [],
-      grocery: Array.isArray(parsed.grocery) ? parsed.grocery : [],
+      grocery: compactGroceryList(Array.isArray(parsed.grocery) ? parsed.grocery : []),
     };
   } catch {
     cache = { recipes: [], grocery: [] };
@@ -221,6 +225,7 @@ export async function addGroceryLines(input: {
   for (const line of input.ingredients) {
     const parsed = parseIngredient(line);
     if (!parsed.name) continue;
+    parsed.name = normalizeGroceryName(parsed.name);
     const key = groceryKey(parsed);
     const existing = store.grocery.find((item) => item.key === key && !item.checked);
     if (existing) {
@@ -239,12 +244,14 @@ export async function addGroceryLines(input: {
         checked: false,
         recipeIds: input.recipeId ? [input.recipeId] : [],
         recipeTitles: input.recipeTitle ? [input.recipeTitle] : [],
+        category: guessGroceryCategory(parsed.name),
         label: "",
       };
       created.label = formatGroceryLabel({ ...created, raw: parsed.raw });
       store.grocery.push(created);
     }
   }
+  store.grocery = compactGroceryList(store.grocery);
   await persist(store);
   return store.grocery;
 }
@@ -253,10 +260,24 @@ export async function setGroceryChecked(
   id: string,
   checked: boolean,
 ): Promise<GroceryItem> {
+  return patchGroceryItem(id, { checked });
+}
+
+export async function setGroceryCategory(
+  id: string,
+  category: GroceryCategory,
+): Promise<GroceryItem> {
+  return patchGroceryItem(id, { category });
+}
+
+async function patchGroceryItem(
+  id: string,
+  patch: { checked?: boolean; category?: GroceryCategory },
+): Promise<GroceryItem> {
   const store = await loadStore();
   const current = store.grocery.find((item) => item.id === id);
   if (!current) throw new Error("That grocery item was not found.");
-  const next = { ...current, checked };
+  const next = { ...current, ...patch };
   store.grocery = store.grocery.map((item) => (item.id === id ? next : item));
   await persist(store);
   return next;

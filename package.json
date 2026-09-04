@@ -10,6 +10,9 @@
     "dev:android": "concurrently -k -i -n api,expo -c cyan,green \"npm run dev:api\" \"npm run start --prefix mobile\"",
     "dev:android:tunnel": "EXPO_HOST=tunnel concurrently -k -i -n api,expo -c cyan,green \"npm run dev:api\" \"npm run start --prefix mobile\"",
     "start:android": "npm run start --prefix mobile",
+    "apk": "npm run apk --prefix mobile",
+    "apk:install": "npm run apk:install --prefix mobile",
+    "keystore": "npm run keystore --prefix mobile",
     "build": "tsc --noEmit && vite build",
     "start": "tsx server/index.ts",
     "preview": "vite preview"

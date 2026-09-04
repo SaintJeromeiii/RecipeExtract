@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { extractRecipe as extractFromPage } from "../../shared/extract";
 import { isSocialUrl, recipeFromCaption } from "../../shared/socialExtract";
-import type { GroceryItem, Recipe, RecipePatch, SavedRecipe } from "./types";
+import type { GroceryCategory, GroceryItem, Recipe, RecipePatch, SavedRecipe } from "./types";
 import {
   addGroceryLines,
   clearCheckedGrocery as clearChecked,
@@ -12,6 +12,7 @@ import {
   removeRecipe,
   saveRecipe as persistRecipe,
   setGroceryChecked,
+  setGroceryCategory,
   updateRecipe,
 } from "./localStore";
 
@@ -164,6 +165,13 @@ export async function setGroceryItemChecked(
   checked: boolean,
 ): Promise<GroceryItem> {
   return setGroceryChecked(id, checked);
+}
+
+export async function setGroceryItemCategory(
+  id: string,
+  category: GroceryCategory,
+): Promise<GroceryItem> {
+  return setGroceryCategory(id, category);
 }
 
 export async function removeGrocery(id: string): Promise<void> {

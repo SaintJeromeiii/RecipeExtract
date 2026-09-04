@@ -5,6 +5,16 @@
   "build": {
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://recipeextract-production.up.railway.app"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "local": {
+      "extends": "preview",
+      "distribution": "internal",
       "android": {
         "buildType": "apk"
       }

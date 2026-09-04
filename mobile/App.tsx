@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   Modal,
   Pressable,
@@ -15,10 +16,16 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingredients";
+import {
+  groceryCategoryLabel,
+  groupGroceryItems,
+  nextGroceryCategory,
+} from "../shared/groceryCategories";
 import { recipeAsHtml, recipeAsText } from "../shared/share-text";
 import { findTimers } from "../shared/timers";
 import {
@@ -31,6 +38,7 @@ import {
   removeGrocery,
   removeSavedRecipe,
   saveRecipe,
+  setGroceryItemCategory,
   setGroceryItemChecked,
   setRecipeFavorite,
   updateSavedRecipe,
@@ -72,6 +80,7 @@ export default function App() {
 }
 
 function AppInner() {
+  const { height: windowHeight } = useWindowDimensions();
   const [url, setUrl] = useState("");
   const [captionText, setCaptionText] = useState("");
   const [inputMode, setInputMode] = useState<"url" | "caption">("url");
@@ -90,6 +99,7 @@ function AppInner() {
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [grocery, setGrocery] = useState<GroceryItem[]>([]);
   const [groceryOpen, setGroceryOpen] = useState(false);
+  const groceryGroups = useMemo(() => groupGroceryItems(grocery), [grocery]);
   const [servings, setServings] = useState(4);
   const [baseServings, setBaseServings] = useState(4);
   const [editing, setEditing] = useState(false);
@@ -124,6 +134,26 @@ function AppInner() {
       void deactivateKeepAwake("cook");
     };
   }, [cookOpen]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (cookOpen) {
+        setCookOpen(false);
+        return true;
+      }
+      if (groceryOpen) {
+        setGroceryOpen(false);
+        return true;
+      }
+      if (view === "recipe") {
+        setView("home");
+        setError(null);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [cookOpen, groceryOpen, view]);
 
   async function extract(nextUrl = url) {
     const trimmed = nextUrl.trim();
@@ -293,7 +323,7 @@ function AppInner() {
           <View style={styles.brandMark}>
             <Text style={styles.brandMarkText}>R</Text>
           </View>
-          <Text style={styles.brandText}>RecipeExtract</Text>
+          <Text style={styles.brandText}>RecipeGuru</Text>
         </Pressable>
         <View style={styles.topActions}>
           <Pressable style={styles.ghost} onPress={() => setGroceryOpen(true)}>
@@ -309,27 +339,34 @@ function AppInner() {
           <Text style={styles.eyebrow}>Skip the blog. Keep the recipe.</Text>
           <Text style={styles.title}>Paste a URL.</Text>
           <Text style={styles.titleEm}>Or a Reel caption.</Text>
-          <View style={styles.chips}>
-            <Pressable
-              style={[styles.chip, inputMode === "url" && styles.chipOn]}
-              onPress={() => setInputMode("url")}
-            >
-              <Text style={styles.chipText}>URL</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.chip, inputMode === "caption" && styles.chipOn]}
-              onPress={() => setInputMode("caption")}
-            >
-              <Text style={styles.chipText}>Caption text</Text>
-            </Pressable>
-          </View>
+          <View style={styles.composer}>
+            <View style={styles.modeSwitch}>
+              <Pressable
+                style={[styles.modeBtn, inputMode === "url" && styles.modeBtnOn]}
+                onPress={() => setInputMode("url")}
+              >
+                <Text style={[styles.modeBtnText, inputMode === "url" && styles.modeBtnTextOn]}>
+                  URL
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modeBtn, inputMode === "caption" && styles.modeBtnOn]}
+                onPress={() => setInputMode("caption")}
+              >
+                <Text
+                  style={[styles.modeBtnText, inputMode === "caption" && styles.modeBtnTextOn]}
+                >
+                  Caption text
+                </Text>
+              </Pressable>
+            </View>
           <View style={styles.urlForm}>
             {inputMode === "url" ? (
               <TextInput
                 value={url}
                 onChangeText={setUrl}
                 placeholder="Recipe blog, Facebook Reel, TikTok…"
-                placeholderTextColor="#8d7f6e"
+                placeholderTextColor="#7f8e89"
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
@@ -341,7 +378,7 @@ function AppInner() {
                 value={captionText}
                 onChangeText={setCaptionText}
                 placeholder={"Ingredients:\n1 cup flour\n...\n\nInstructions:\n1. Mix..."}
-                placeholderTextColor="#8d7f6e"
+                placeholderTextColor="#7f8e89"
                 multiline
                 style={[styles.input, styles.captionInput]}
                 textAlignVertical="top"
@@ -383,7 +420,9 @@ function AppInner() {
               </Pressable>
             </View>
           </View>
+          </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Text style={styles.sectionLabel}>Try one</Text>
           <View style={styles.chips}>
             {EXAMPLES.map((example) => (
               <Pressable
@@ -395,12 +434,13 @@ function AppInner() {
               </Pressable>
             ))}
           </View>
+          <Text style={styles.sectionTitle}>Saved recipes</Text>
           <TextInput
             style={styles.search}
             value={libraryQuery}
             onChangeText={setLibraryQuery}
             placeholder="Search saved recipes"
-            placeholderTextColor="#8d7f6e"
+            placeholderTextColor="#7f8e89"
           />
           <View style={styles.chips}>
             <Pressable
@@ -647,7 +687,7 @@ function AppInner() {
       {loading ? (
         <View style={styles.loading}>
           <View style={styles.loadingCard}>
-            <ActivityIndicator color="#e4572e" />
+            <ActivityIndicator color="#ff5a3c" />
             <Text style={styles.loadingText}>Reading the page and cutting the filler…</Text>
           </View>
         </View>
@@ -674,47 +714,105 @@ function AppInner() {
         }}
       />
 
-      <Modal visible={groceryOpen} animationType="slide" transparent>
-        <View style={styles.groceryWrap}>
+      <Modal
+        visible={groceryOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setGroceryOpen(false)}
+      >
+        <SafeAreaView style={styles.groceryWrap} edges={["bottom", "left", "right"]}>
           <View style={styles.groceryCard}>
             <Text style={styles.panelTitle}>Grocery list</Text>
-            {grocery.map((item) => (
-              <View key={item.id} style={styles.checkRow}>
-                <Pressable
-                  style={{ flex: 1, flexDirection: "row", gap: 8 }}
-                  onPress={() => {
-                    void setGroceryItemChecked(item.id, !item.checked).then((updated) => {
-                      setGrocery((current) =>
-                        current.map((row) => (row.id === updated.id ? updated : row)),
-                      );
-                    });
-                  }}
-                >
-                  <Check checked={item.checked} />
-                  <Text style={styles.checkLabel}>{item.label}</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => {
-                    void removeGrocery(item.id).then(() => {
-                      setGrocery((current) => current.filter((row) => row.id !== item.id));
-                    });
-                  }}
-                >
-                  <Text style={styles.textBtn}>Remove</Text>
-                </Pressable>
-              </View>
-            ))}
+            <ScrollView
+              style={[styles.groceryList, { maxHeight: Math.round(windowHeight * 0.52) }]}
+              contentContainerStyle={styles.groceryListContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {grocery.length === 0 ? (
+                <Text style={styles.libraryMeta}>
+                  Open a recipe and tap Add to grocery for unchecked ingredients.
+                </Text>
+              ) : (
+                <>
+                  <Text style={styles.groceryHint}>
+                    Sorted by aisle. Tap a category to change it.
+                  </Text>
+                  {groceryGroups.map((group, index) => (
+                    <View key={group.category}>
+                      <Text
+                        style={[
+                          styles.groceryGroupTitle,
+                          index === 0 ? { marginTop: 0 } : null,
+                        ]}
+                      >
+                        {group.label}
+                      </Text>
+                      {group.items.map((item) => (
+                        <View key={item.id} style={styles.checkRow}>
+                          <Pressable
+                            style={{ flex: 1, flexDirection: "row", gap: 8 }}
+                            onPress={() => {
+                              void setGroceryItemChecked(item.id, !item.checked).then(
+                                (updated) => {
+                                  setGrocery((current) =>
+                                    current.map((row) =>
+                                      row.id === updated.id ? updated : row,
+                                    ),
+                                  );
+                                },
+                              );
+                            }}
+                          >
+                            <Check checked={item.checked} />
+                            <Text style={styles.checkLabel}>{item.label}</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => {
+                              void setGroceryItemCategory(
+                                item.id,
+                                nextGroceryCategory(item.category),
+                              ).then((updated) => {
+                                setGrocery((current) =>
+                                  current.map((row) =>
+                                    row.id === updated.id ? updated : row,
+                                  ),
+                                );
+                              });
+                            }}
+                          >
+                            <Text style={styles.groceryCatChip}>
+                              {groceryCategoryLabel(item.category)}
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => {
+                              void removeGrocery(item.id).then(() => {
+                                setGrocery((current) =>
+                                  current.filter((row) => row.id !== item.id),
+                                );
+                              });
+                            }}
+                          >
+                            <Text style={styles.groceryRemove}>Remove</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
+                  ))}
+                </>
+              )}
+            </ScrollView>
             <Pressable
-              style={styles.ghost}
+              style={styles.groceryGhost}
               onPress={() => void clearCheckedGrocery().then(setGrocery)}
             >
-              <Text style={styles.ghostText}>Clear checked</Text>
+              <Text style={styles.groceryGhostText}>Clear checked</Text>
             </Pressable>
             <Pressable style={styles.primary} onPress={() => setGroceryOpen(false)}>
               <Text style={styles.primaryText}>Close</Text>
             </Pressable>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -791,7 +889,7 @@ function CookMode({
   const total = recipe.steps.length;
   const step = recipe.steps[index] ?? "";
   return (
-    <Modal visible={visible} animationType="slide">
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaProvider>
         <SafeAreaView style={styles.cook}>
           <View style={styles.cookBar}>
@@ -858,144 +956,175 @@ function Check({ checked }: { checked: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#14110e" },
+  safe: { flex: 1, backgroundColor: "#0e1519" },
   topbar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(247,243,235,0.1)",
   },
   topActions: { flexDirection: "row", gap: 8 },
   brand: { flexDirection: "row", alignItems: "center", gap: 10 },
   brandMark: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "#e4572e",
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#ff5a3c",
     alignItems: "center",
     justifyContent: "center",
   },
-  brandMarkText: { color: "#fff7ef", fontWeight: "800" },
-  brandText: { color: "#f4ead7", fontWeight: "700", fontSize: 17 },
-  hero: { padding: 20, paddingBottom: 48, gap: 10 },
-  eyebrow: { color: "#c9b79a", letterSpacing: 2, textTransform: "uppercase", fontSize: 12 },
-  title: { color: "#f4ead7", fontSize: 36, fontWeight: "700" },
-  titleEm: { color: "#f0b9a5", fontSize: 32, fontStyle: "italic" },
-  urlForm: {
-    backgroundColor: "#1d1814",
-    borderColor: "rgba(244,234,215,0.14)",
+  brandMarkText: { color: "#fff8f5", fontWeight: "800" },
+  brandText: { color: "#f7f3eb", fontWeight: "700", fontSize: 17 },
+  hero: { padding: 20, paddingBottom: 48, gap: 12 },
+  eyebrow: { color: "#5ec8b6", letterSpacing: 2.2, textTransform: "uppercase", fontSize: 12, fontWeight: "600" },
+  title: { color: "#f7f3eb", fontSize: 36, fontWeight: "700" },
+  titleEm: { color: "#e8b86d", fontSize: 32, fontStyle: "italic" },
+  composer: {
+    backgroundColor: "#172126",
+    borderColor: "rgba(247,243,235,0.1)",
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 22,
     padding: 10,
     gap: 10,
   },
-  input: { color: "#f4ead7", fontSize: 16, padding: 10 },
+  modeSwitch: {
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.22)",
+    borderRadius: 999,
+    padding: 4,
+    gap: 4,
+  },
+  modeBtn: { flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: "center" },
+  modeBtnOn: { backgroundColor: "#1c2a31" },
+  modeBtnText: { color: "#9aa8a3", fontWeight: "700" },
+  modeBtnTextOn: { color: "#f7f3eb" },
+  urlForm: { gap: 10 },
+  input: {
+    color: "#f7f3eb",
+    fontSize: 16,
+    padding: 12,
+    backgroundColor: "rgba(0,0,0,0.18)",
+    borderRadius: 14,
+  },
   captionInput: { minHeight: 140 },
   formRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
-  primary: { backgroundColor: "#e4572e", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12 },
-  primaryText: { color: "#fff7ef", fontWeight: "700", textAlign: "center" },
+  primary: { backgroundColor: "#ff5a3c", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12 },
+  primaryText: { color: "#fff8f5", fontWeight: "700", textAlign: "center" },
   ghost: {
     borderWidth: 1,
-    borderColor: "rgba(244,234,215,0.14)",
+    borderColor: "rgba(247,243,235,0.12)",
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  ghostText: { color: "#f4ead7", fontWeight: "600" },
-  error: { color: "#ffb4a2" },
+  ghostText: { color: "#f7f3eb", fontWeight: "600" },
+  error: { color: "#ff9b8a" },
+  sectionLabel: {
+    color: "#9aa8a3",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    marginTop: 8,
+  },
+  sectionTitle: { color: "#f7f3eb", fontSize: 22, fontWeight: "700", marginTop: 10 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     borderWidth: 1,
-    borderColor: "rgba(244,234,215,0.14)",
+    borderColor: "rgba(247,243,235,0.12)",
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    backgroundColor: "#172126",
   },
-  chipOn: { backgroundColor: "rgba(228,87,46,0.2)", borderColor: "rgba(228,87,46,0.7)" },
-  chipText: { color: "#f4ead7" },
+  chipOn: { backgroundColor: "rgba(255,90,60,0.18)", borderColor: "rgba(255,90,60,0.7)" },
+  chipText: { color: "#f7f3eb" },
   search: {
     borderWidth: 1,
-    borderColor: "rgba(244,234,215,0.14)",
-    borderRadius: 12,
-    color: "#f4ead7",
+    borderColor: "rgba(247,243,235,0.12)",
+    borderRadius: 14,
+    color: "#f7f3eb",
     paddingHorizontal: 12,
     paddingVertical: 10,
+    backgroundColor: "#172126",
   },
   libraryCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#1d1814",
-    borderColor: "rgba(244,234,215,0.14)",
+    backgroundColor: "#172126",
+    borderColor: "rgba(247,243,235,0.1)",
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 8,
   },
   libraryOpen: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
   libraryImage: {
     width: 56,
     height: 56,
-    borderRadius: 12,
-    backgroundColor: "#2a221c",
+    borderRadius: 14,
+    backgroundColor: "#1c2a31",
     alignItems: "center",
     justifyContent: "center",
   },
-  libraryName: { color: "#f4ead7", fontWeight: "700" },
-  libraryMeta: { color: "#c9b79a" },
-  recipe: { padding: 16, paddingBottom: 48, gap: 10 },
-  recipeImage: { width: "100%", height: 200, borderRadius: 18, backgroundColor: "#2a221c" },
-  recipeTitle: { color: "#f4ead7", fontSize: 30, fontWeight: "700" },
+  libraryName: { color: "#f7f3eb", fontWeight: "700" },
+  libraryMeta: { color: "#9aa8a3" },
+  recipe: { padding: 16, paddingBottom: 48, gap: 12 },
+  recipeImage: { width: "100%", height: 210, borderRadius: 22, backgroundColor: "#1c2a31" },
+  recipeTitle: { color: "#f7f3eb", fontSize: 30, fontWeight: "700" },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   metaChip: {
     borderWidth: 1,
-    borderColor: "rgba(244,234,215,0.14)",
+    borderColor: "rgba(247,243,235,0.12)",
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  metaText: { color: "#f4ead7", fontSize: 12 },
+  metaText: { color: "#f7f3eb", fontSize: 12 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  panel: { backgroundColor: "#f4ead7", borderRadius: 20, padding: 16, gap: 6 },
-  panelTitle: { color: "#1a1209", fontSize: 22, fontWeight: "700" },
+  panel: { backgroundColor: "#f7f3eb", borderRadius: 22, padding: 16, gap: 6 },
+  panelTitle: { color: "#142018", fontSize: 22, fontWeight: "700" },
   checkRow: { flexDirection: "row", gap: 10, paddingVertical: 8, alignItems: "flex-start" },
   check: {
     width: 22,
     height: 22,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: "#e4572e",
+    borderColor: "#ff5a3c",
     alignItems: "center",
     justifyContent: "center",
   },
-  checkOn: { backgroundColor: "#e4572e" },
-  checkMark: { color: "#fff7ef", fontWeight: "800", fontSize: 12 },
-  checkLabel: { flex: 1, color: "#1a1209", fontSize: 16 },
-  stepCard: { flexDirection: "row", gap: 12, backgroundColor: "#efe3cc", borderRadius: 16, padding: 12 },
+  checkOn: { backgroundColor: "#ff5a3c" },
+  checkMark: { color: "#fff8f5", fontWeight: "800", fontSize: 12 },
+  checkLabel: { flex: 1, color: "#142018", fontSize: 16 },
+  stepCard: { flexDirection: "row", gap: 12, backgroundColor: "#efe8db", borderRadius: 18, padding: 12 },
   stepIndex: {
     width: 48,
     height: 48,
-    borderRadius: 12,
-    backgroundColor: "#1a1209",
+    borderRadius: 14,
+    backgroundColor: "#142018",
     alignItems: "center",
     justifyContent: "center",
   },
-  stepIndexText: { color: "#f4ead7", fontWeight: "800", fontSize: 18 },
-  stepText: { color: "#1a1209", fontSize: 17, lineHeight: 24 },
-  textBtn: { color: "#1a1209", fontWeight: "700", marginTop: 8 },
-  timerChip: { color: "#e4572e", textDecorationLine: "underline", fontWeight: "700" },
+  stepIndexText: { color: "#f7f3eb", fontWeight: "800", fontSize: 18 },
+  stepText: { color: "#142018", fontSize: 17, lineHeight: 24 },
+  textBtn: { color: "#142018", fontWeight: "700", marginTop: 8 },
+  timerChip: { color: "#ff5a3c", textDecorationLine: "underline", fontWeight: "700" },
   editArea: {
     minHeight: 120,
     borderWidth: 1,
-    borderColor: "rgba(26,18,9,0.14)",
+    borderColor: "rgba(20,32,24,0.12)",
     borderRadius: 12,
     padding: 10,
-    color: "#1a1209",
+    color: "#142018",
     textAlignVertical: "top",
   },
   loading: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(20,17,14,0.72)",
+    backgroundColor: "rgba(8,12,14,0.7)",
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
@@ -1004,19 +1133,63 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: "#1d1814",
-    borderRadius: 16,
+    backgroundColor: "#172126",
+    borderRadius: 18,
     padding: 16,
   },
-  loadingText: { color: "#f4ead7", flexShrink: 1 },
-  cook: { flex: 1, backgroundColor: "#090807" },
+  loadingText: { color: "#f7f3eb", flexShrink: 1 },
+  cook: { flex: 1, backgroundColor: "#081014" },
   cookBar: { flexDirection: "row", alignItems: "center", gap: 8, padding: 16 },
-  cookBarText: { color: "#d8cbb6", flex: 1, textTransform: "uppercase" },
+  cookBarText: { color: "#9aa8a3", flex: 1, textTransform: "uppercase" },
   cookStage: { padding: 20, gap: 12 },
   cookStep: { color: "#fff8ef", fontSize: 32, lineHeight: 40, fontWeight: "700" },
   cookNav: { flexDirection: "row", gap: 10, padding: 16 },
   cookNavBtn: { flex: 1, alignItems: "center", minHeight: 52, justifyContent: "center" },
-  groceryWrap: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", padding: 16 },
-  groceryCard: { backgroundColor: "#f4ead7", borderRadius: 18, padding: 16, maxHeight: "80%", gap: 8 },
+  groceryWrap: {
+    flex: 1,
+    backgroundColor: "rgba(8,12,14,0.7)",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingTop: 24,
+  },
+  groceryCard: {
+    backgroundColor: "#f7f3eb",
+    borderRadius: 22,
+    padding: 16,
+    gap: 8,
+    overflow: "hidden",
+  },
+  groceryList: { flexGrow: 0 },
+  groceryListContent: { paddingBottom: 4 },
+  groceryHint: { color: "#5c6a62", fontSize: 13, marginBottom: 4 },
+  groceryGroupTitle: {
+    color: "#5c6a62",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginTop: 14,
+    marginBottom: 2,
+  },
+  groceryCatChip: {
+    color: "#5c6a62",
+    fontSize: 12,
+    fontWeight: "600",
+    borderWidth: 1,
+    borderColor: "rgba(20,32,24,0.14)",
+    borderRadius: 999,
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  groceryRemove: { color: "#142018", fontWeight: "700", fontSize: 14 },
+  groceryGhost: {
+    borderWidth: 1,
+    borderColor: "rgba(20,32,24,0.14)",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  groceryGhostText: { color: "#142018", fontWeight: "600", textAlign: "center" },
   disabled: { opacity: 0.45 },
 });

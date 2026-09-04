@@ -5,4 +5,5 @@ export type {
   SavedRecipe,
   ParsedIngredient,
   TimerMatch,
+  GroceryCategory,
 } from "../../shared/types";
