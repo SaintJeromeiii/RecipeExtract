@@ -1,5 +1,6 @@
 import { guessGroceryCategory, isGroceryCategory } from "./groceryCategories";
-import type { GroceryItem, ParsedIngredient } from "./types";
+import { RECIPE_CATEGORY_LABELS } from "./recipeCategories";
+import type { GroceryItem, ParsedIngredient, RecipeCategory } from "./types";
 
 const UNICODE: Record<string, number> = {
   "¼": 0.25,
@@ -114,7 +115,9 @@ export function parseServings(value: string | null | undefined): number | null {
 }
 
 const PREP_WORDS =
-  /\b(finely|roughly|freshly|fresh|large|small|medium|extra-?large|chopped|diced|minced|sliced|crushed|grated|optional|divided|plus more|to taste)\b/gi;
+  /\b(finely|roughly|coarsely|freshly|fresh|large|small|medium|extra-?large|chopped|diced|minced|sliced|crushed|grated|shredded|julienned|peeled|seeded|trimmed|halved|quartered|cubed|crumbled|softened|melted|cooked|uncooked|raw|drained|rinsed|washed|optional|divided|plus more|to taste|for garnish|for serving|room temperature)\b/gi;
+
+const COUNT_UNITS = new Set(["", "piece", "pieces", "each", "item", "items", "whole", "count"]);
 
 function singularizeWord(word: string): string {
   if (word.endsWith("ies") && word.length > 4) return `${word.slice(0, -3)}y`;
@@ -134,16 +137,28 @@ function pluralizeWord(word: string): string {
   return `${word}s`;
 }
 
+function stripPrepNotes(name: string): string {
+  return name
+    .replace(PREP_WORDS, " ")
+    .replace(/\b(and|or|with)\s*$/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function normalizeGroceryName(name: string): string {
-  const value = name
+  let value = name
     .toLowerCase()
     .replace(/\u00a0/g, " ")
     .replace(/[*†‡]+/g, "")
-    .replace(/\([^)]*\)/g, " ")
+    .replace(/[（［]/g, "(")
+    .replace(/[）］]/g, ")")
+    .replace(/\s*[\(\[\{].*$/g, " ")
     .split(",")[0]
-    .replace(PREP_WORDS, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .split(";")[0]
+    .split(" - ")[0]
+    .split(" – ")[0]
+    .replace(/[^a-z0-9\s-]/g, " ");
+  value = stripPrepNotes(stripPrepNotes(value));
   const parts = value.split(" ").filter(Boolean);
   if (parts.length) {
     parts[parts.length - 1] = singularizeWord(parts[parts.length - 1]);
@@ -151,8 +166,13 @@ export function normalizeGroceryName(name: string): string {
   return parts.join(" ").trim();
 }
 
+function groceryUnitKey(unit: string | null): string {
+  const value = (unit ?? "").toLowerCase();
+  return COUNT_UNITS.has(value) ? "" : value;
+}
+
 export function groceryKey(parsed: { name: string; unit: string | null }): string {
-  return `${normalizeGroceryName(parsed.name)}|${parsed.unit ?? ""}`;
+  return `${normalizeGroceryName(parsed.name)}|${groceryUnitKey(parsed.unit)}`;
 }
 
 export function formatGroceryLabel(item: {
@@ -259,6 +279,7 @@ export function matchesQuery(
     sourceName: string | null;
     notes?: string;
     tags?: string[];
+    categories?: RecipeCategory[];
     ingredients: string[];
   },
   query: string,
@@ -270,6 +291,7 @@ export function matchesQuery(
     recipe.sourceName ?? "",
     recipe.notes ?? "",
     ...(recipe.tags ?? []),
+    ...(recipe.categories ?? []).map((category) => RECIPE_CATEGORY_LABELS[category]),
     ...recipe.ingredients,
   ]
     .join(" ")

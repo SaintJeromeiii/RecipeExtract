@@ -1,5 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { guessGroceryCategory } from "../../shared/groceryCategories";
+import { guessGroceryCategory, resolveCategoryOrder } from "../../shared/groceryCategories";
+import {
+  guessRecipeCategories,
+  hydrateRecipeCategories,
+  normalizeRecipeCategories,
+} from "../../shared/recipeCategories";
 import {
   compactGroceryList,
   formatGroceryLabel,
@@ -11,6 +16,7 @@ import {
 import type {
   GroceryCategory,
   GroceryItem,
+  GroceryListState,
   Recipe,
   RecipePatch,
   SavedRecipe,
@@ -21,6 +27,7 @@ const STORAGE_KEY = "recipeextract.store.v1";
 type StoreFile = {
   recipes: SavedRecipe[];
   grocery: GroceryItem[];
+  groceryCategoryOrder: GroceryCategory[];
 };
 
 let cache: StoreFile | null = null;
@@ -81,6 +88,7 @@ function hydrateSaved(value: unknown): SavedRecipe | null {
     tags: Array.isArray(input.tags)
       ? input.tags.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim()))
       : [],
+    categories: hydrateRecipeCategories(input, recipe),
   };
 }
 
@@ -94,9 +102,14 @@ async function loadStore(): Promise<StoreFile> {
         ? parsed.recipes.map(hydrateSaved).filter((item): item is SavedRecipe => Boolean(item))
         : [],
       grocery: compactGroceryList(Array.isArray(parsed.grocery) ? parsed.grocery : []),
+      groceryCategoryOrder: resolveCategoryOrder(parsed.groceryCategoryOrder),
     };
   } catch {
-    cache = { recipes: [], grocery: [] };
+    cache = {
+      recipes: [],
+      grocery: [],
+      groceryCategoryOrder: resolveCategoryOrder(),
+    };
   }
   return cache;
 }
@@ -140,6 +153,7 @@ export async function saveRecipe(input: unknown): Promise<SavedRecipe> {
         favorite: existing.favorite,
         notes: existing.notes,
         tags: existing.tags,
+        categories: existing.categories,
       }
     : {
         ...recipe,
@@ -150,6 +164,10 @@ export async function saveRecipe(input: unknown): Promise<SavedRecipe> {
         tags: Array.isArray(incoming.tags)
           ? incoming.tags.filter((tag): tag is string => typeof tag === "string")
           : [],
+        categories:
+          normalizeRecipeCategories(incoming.categories).length
+            ? normalizeRecipeCategories(incoming.categories)
+            : guessRecipeCategories(recipe),
       };
   store.recipes = [saved, ...store.recipes.filter((item) => item.id !== saved.id)];
   await persist(store);
@@ -177,6 +195,9 @@ export async function updateRecipe(
             (tag): tag is string => typeof tag === "string" && Boolean(tag.trim()),
           ),
         }
+      : {}),
+    ...("categories" in patch
+      ? { categories: normalizeRecipeCategories(patch.categories) }
       : {}),
     ...("title" in patch && typeof patch.title === "string" && patch.title.trim()
       ? { title: patch.title.trim() }
@@ -211,9 +232,16 @@ export async function removeRecipe(id: string): Promise<void> {
   await persist(store);
 }
 
-export async function listGrocery(): Promise<GroceryItem[]> {
+function asGroceryState(store: StoreFile): GroceryListState {
+  return {
+    items: store.grocery,
+    categoryOrder: resolveCategoryOrder(store.groceryCategoryOrder),
+  };
+}
+
+export async function listGrocery(): Promise<GroceryListState> {
   const store = await loadStore();
-  return store.grocery;
+  return asGroceryState(store);
 }
 
 export async function addGroceryLines(input: {
@@ -294,4 +322,27 @@ export async function clearCheckedGrocery(): Promise<GroceryItem[]> {
   store.grocery = store.grocery.filter((item) => !item.checked);
   await persist(store);
   return store.grocery;
+}
+
+export async function clearAllGrocery(): Promise<GroceryItem[]> {
+  const store = await loadStore();
+  store.grocery = [];
+  await persist(store);
+  return store.grocery;
+}
+
+export async function setAllGroceryChecked(checked: boolean): Promise<GroceryItem[]> {
+  const store = await loadStore();
+  store.grocery = store.grocery.map((item) => ({ ...item, checked }));
+  await persist(store);
+  return store.grocery;
+}
+
+export async function setGroceryCategoryOrder(
+  order: unknown,
+): Promise<GroceryCategory[]> {
+  const store = await loadStore();
+  store.groceryCategoryOrder = resolveCategoryOrder(order);
+  await persist(store);
+  return store.groceryCategoryOrder;
 }

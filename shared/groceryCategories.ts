@@ -89,6 +89,11 @@ const CATEGORY_PHRASES: Array<[GroceryCategory, string[]]> = [
       "ground pork",
       "meatball",
       "hot dog",
+      "boneless",
+      "skinless",
+      "tenderloin",
+      "sirloin",
+      "cutlet",
     ],
   ],
   [
@@ -304,30 +309,75 @@ export function groceryCategoryLabel(category: GroceryCategory | undefined): str
   return GROCERY_CATEGORY_LABELS[isGroceryCategory(category) ? category : "other"];
 }
 
+export function itemGroceryCategory(item: GroceryItem): GroceryCategory {
+  return isGroceryCategory(item.category)
+    ? item.category
+    : guessGroceryCategory(item.name || item.label);
+}
+
 export function nextGroceryCategory(category: GroceryCategory | undefined): GroceryCategory {
   const current = isGroceryCategory(category) ? category : "other";
   const index = GROCERY_CATEGORIES.indexOf(current);
   return GROCERY_CATEGORIES[(index + 1) % GROCERY_CATEGORIES.length];
 }
 
-export function groupGroceryItems(items: GroceryItem[]): Array<{
+export function resolveCategoryOrder(order?: unknown): GroceryCategory[] {
+  const next: GroceryCategory[] = [];
+  const seen = new Set<GroceryCategory>();
+  if (order && typeof order === "object" && Symbol.iterator in order) {
+    for (const value of order as Iterable<unknown>) {
+      if (isGroceryCategory(value) && !seen.has(value)) {
+        seen.add(value);
+        next.push(value);
+      }
+    }
+  }
+  for (const category of GROCERY_CATEGORIES) {
+    if (!seen.has(category)) next.push(category);
+  }
+  return next;
+}
+
+export function moveCategoryOrder(
+  order: unknown,
+  category: GroceryCategory,
+  direction: -1 | 1,
+  visible?: GroceryCategory[],
+): GroceryCategory[] {
+  const next = resolveCategoryOrder(order);
+  const lane = visible?.length ? visible : next;
+  const laneIndex = lane.indexOf(category);
+  const swapCategory = lane[laneIndex + direction];
+  if (laneIndex < 0 || !swapCategory) return next;
+  const from = next.indexOf(category);
+  const to = next.indexOf(swapCategory);
+  if (from < 0 || to < 0) return next;
+  [next[from], next[to]] = [next[to], next[from]];
+  return next;
+}
+
+export function groupGroceryItems(
+  items: GroceryItem[],
+  order?: Iterable<unknown> | null,
+): Array<{
   category: GroceryCategory;
   label: string;
   items: GroceryItem[];
 }> {
+  const categories = resolveCategoryOrder(order);
   const buckets = new Map<GroceryCategory, GroceryItem[]>();
-  for (const category of GROCERY_CATEGORIES) buckets.set(category, []);
+  for (const category of categories) buckets.set(category, []);
   for (const item of items) {
     const category = isGroceryCategory(item.category)
       ? item.category
       : guessGroceryCategory(item.name || item.label);
     buckets.get(category)?.push(item);
   }
-  return GROCERY_CATEGORIES.filter((category) => (buckets.get(category)?.length ?? 0) > 0).map(
-    (category) => ({
+  return categories
+    .filter((category) => (buckets.get(category)?.length ?? 0) > 0)
+    .map((category) => ({
       category,
       label: GROCERY_CATEGORY_LABELS[category],
       items: buckets.get(category) ?? [],
-    }),
-  );
+    }));
 }

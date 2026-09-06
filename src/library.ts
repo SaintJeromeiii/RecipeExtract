@@ -1,4 +1,11 @@
-import type { GroceryCategory, GroceryItem, Recipe, RecipePatch, SavedRecipe } from "./types";
+import type {
+  GroceryCategory,
+  GroceryItem,
+  GroceryListState,
+  Recipe,
+  RecipePatch,
+  SavedRecipe,
+} from "./types";
 
 async function readJson<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T;
@@ -48,10 +55,9 @@ export async function removeSavedRecipe(id: string): Promise<void> {
   await readJson<void>(response);
 }
 
-export async function listGrocery(): Promise<GroceryItem[]> {
+export async function listGrocery(): Promise<GroceryListState> {
   const response = await fetch("/api/grocery");
-  const data = await readJson<{ items: GroceryItem[] }>(response);
-  return data.items;
+  return readJson<GroceryListState>(response);
 }
 
 export async function addGrocery(input: {
@@ -101,4 +107,32 @@ export async function clearCheckedGrocery(): Promise<GroceryItem[]> {
   const response = await fetch("/api/grocery/checked", { method: "DELETE" });
   const data = await readJson<{ items: GroceryItem[] }>(response);
   return data.items;
+}
+
+export async function clearAllGrocery(): Promise<GroceryItem[]> {
+  const response = await fetch("/api/grocery", { method: "DELETE" });
+  const data = await readJson<{ items: GroceryItem[] }>(response);
+  return data.items;
+}
+
+export async function setAllGroceryChecked(checked: boolean): Promise<GroceryItem[]> {
+  const response = await fetch("/api/grocery/checked", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ checked }),
+  });
+  const data = await readJson<{ items: GroceryItem[] }>(response);
+  return data.items;
+}
+
+export async function setGroceryCategoryOrder(
+  categoryOrder: GroceryCategory[],
+): Promise<GroceryCategory[]> {
+  const response = await fetch("/api/grocery/order", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ categoryOrder }),
+  });
+  const data = await readJson<{ categoryOrder: GroceryCategory[] }>(response);
+  return data.categoryOrder;
 }

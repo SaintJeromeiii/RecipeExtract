@@ -24,12 +24,21 @@ import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingr
 import {
   groceryCategoryLabel,
   groupGroceryItems,
-  nextGroceryCategory,
+  itemGroceryCategory,
+  moveCategoryOrder,
+  resolveCategoryOrder,
 } from "../shared/groceryCategories";
+import {
+  RECIPE_CATEGORIES,
+  recipeCategoryLabel,
+  recipeMatchesCategory,
+  toggleRecipeCategory,
+} from "../shared/recipeCategories";
 import { recipeAsHtml, recipeAsText } from "../shared/share-text";
 import { findTimers } from "../shared/timers";
 import {
   addGrocery,
+  clearAllGrocery,
   clearCheckedGrocery,
   extractRecipe,
   extractRecipeFromCaption,
@@ -38,13 +47,24 @@ import {
   removeGrocery,
   removeSavedRecipe,
   saveRecipe,
+  setAllGroceryChecked,
+  setGroceryCategoryOrder,
   setGroceryItemCategory,
   setGroceryItemChecked,
   setRecipeFavorite,
   updateSavedRecipe,
 } from "./src/api";
 import { useCookTimers } from "./src/kitchen";
-import type { GroceryItem, Recipe, SavedRecipe, TimerMatch } from "./src/types";
+import type {
+  GroceryCategory,
+  GroceryItem,
+  Recipe,
+  RecipeCategory,
+  SavedRecipe,
+  TimerMatch,
+} from "./src/types";
+
+type LibraryFilter = "all" | "favorites" | RecipeCategory;
 
 const EXAMPLES = [
   { label: "Lentil soup", url: "https://cookieandkate.com/best-lentil-soup-recipe/" },
@@ -94,12 +114,20 @@ function AppInner() {
   const [cookIndex, setCookIndex] = useState(0);
   const [showCookIngredients, setShowCookIngredients] = useState(false);
   const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>([]);
-  const [libraryFilter, setLibraryFilter] = useState<"all" | "favorites">("all");
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [grocery, setGrocery] = useState<GroceryItem[]>([]);
+  const [categoryOrder, setCategoryOrder] = useState<GroceryCategory[]>(() =>
+    resolveCategoryOrder(),
+  );
   const [groceryOpen, setGroceryOpen] = useState(false);
-  const groceryGroups = useMemo(() => groupGroceryItems(grocery), [grocery]);
+  const [arrangeAisles, setArrangeAisles] = useState(false);
+  const [assigningItem, setAssigningItem] = useState<GroceryItem | null>(null);
+  const groceryGroups = useMemo(
+    () => groupGroceryItems(grocery, categoryOrder),
+    [grocery, categoryOrder],
+  );
   const [servings, setServings] = useState(4);
   const [baseServings, setBaseServings] = useState(4);
   const [editing, setEditing] = useState(false);
@@ -124,7 +152,12 @@ function AppInner() {
 
   useEffect(() => {
     void listSavedRecipes().then(setSavedRecipes).catch(() => {});
-    void listGrocery().then(setGrocery).catch(() => {});
+    void listGrocery()
+      .then(({ items, categoryOrder: order }) => {
+        setGrocery(items);
+        setCategoryOrder(order);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -141,6 +174,10 @@ function AppInner() {
         setCookOpen(false);
         return true;
       }
+      if (assigningItem) {
+        setAssigningItem(null);
+        return true;
+      }
       if (groceryOpen) {
         setGroceryOpen(false);
         return true;
@@ -153,7 +190,7 @@ function AppInner() {
       return false;
     });
     return () => sub.remove();
-  }, [cookOpen, groceryOpen, view]);
+  }, [assigningItem, cookOpen, groceryOpen, view]);
 
   async function extract(nextUrl = url) {
     const trimmed = nextUrl.trim();
@@ -457,9 +494,25 @@ function AppInner() {
                 Favorites {savedRecipes.filter((item) => item.favorite).length}
               </Text>
             </Pressable>
+            {RECIPE_CATEGORIES.map((category) => (
+              <Pressable
+                key={category}
+                style={[styles.chip, libraryFilter === category && styles.chipOn]}
+                onPress={() => setLibraryFilter(category)}
+              >
+                <Text style={styles.chipText}>
+                  {recipeCategoryLabel(category)}{" "}
+                  {savedRecipes.filter((item) => recipeMatchesCategory(item, category)).length}
+                </Text>
+              </Pressable>
+            ))}
           </View>
           {savedRecipes
-            .filter((item) => (libraryFilter === "favorites" ? item.favorite : true))
+            .filter((item) => {
+              if (libraryFilter === "favorites") return item.favorite;
+              if (libraryFilter !== "all") return recipeMatchesCategory(item, libraryFilter);
+              return true;
+            })
             .filter((item) => matchesQuery(item, libraryQuery))
             .map((item) => (
               <View key={item.id} style={styles.libraryCard}>
@@ -484,6 +537,9 @@ function AppInner() {
                     <Text style={styles.libraryName}>{item.title}</Text>
                     <Text style={styles.libraryMeta}>
                       {item.sourceName ?? "Saved"}
+                      {item.categories.length
+                        ? ` · ${item.categories.map(recipeCategoryLabel).join(", ")}`
+                        : ""}
                       {item.tags.length ? ` · ${item.tags.join(", ")}` : ""}
                     </Text>
                   </View>
@@ -642,6 +698,28 @@ function AppInner() {
           </View>
 
           <View style={styles.panel}>
+            <Text style={styles.panelTitle}>Meal</Text>
+            <View style={styles.chips}>
+              {RECIPE_CATEGORIES.map((category) => {
+                const on = (savedMatch?.categories ?? []).includes(category);
+                return (
+                  <Pressable
+                    key={category}
+                    style={[styles.chip, on && styles.chipOn]}
+                    onPress={() =>
+                      void persistPatch({
+                        categories: toggleRecipeCategory(savedMatch?.categories, category),
+                      })
+                    }
+                  >
+                    <Text style={styles.chipText}>{recipeCategoryLabel(category)}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.panel}>
             <Text style={styles.panelTitle}>Notes & tags</Text>
             <View style={styles.chips}>
               {(savedMatch?.tags ?? []).map((tag) => (
@@ -728,6 +806,43 @@ function AppInner() {
               contentContainerStyle={styles.groceryListContent}
               keyboardShouldPersistTaps="handled"
             >
+              <Pressable onPress={() => setArrangeAisles((value) => !value)}>
+                <Text style={styles.groceryHint}>
+                  {arrangeAisles ? "Hide aisle order" : "Arrange aisles"}
+                </Text>
+              </Pressable>
+              {arrangeAisles
+                ? categoryOrder.map((category, index) => (
+                    <View key={category} style={styles.groceryArrangeRow}>
+                      <Text style={styles.checkLabel}>{groceryCategoryLabel(category)}</Text>
+                      <Pressable
+                        disabled={index === 0}
+                        onPress={() => {
+                          const next = moveCategoryOrder(categoryOrder, category, -1, categoryOrder);
+                          void setGroceryCategoryOrder(next).then(setCategoryOrder);
+                        }}
+                      >
+                        <Text style={[styles.groceryMoveBtn, index === 0 && styles.disabled]}>↑</Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={index === categoryOrder.length - 1}
+                        onPress={() => {
+                          const next = moveCategoryOrder(categoryOrder, category, 1, categoryOrder);
+                          void setGroceryCategoryOrder(next).then(setCategoryOrder);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.groceryMoveBtn,
+                            index === categoryOrder.length - 1 && styles.disabled,
+                          ]}
+                        >
+                          ↓
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ))
+                : null}
               {grocery.length === 0 ? (
                 <Text style={styles.libraryMeta}>
                   Open a recipe and tap Add to grocery for unchecked ingredients.
@@ -735,18 +850,59 @@ function AppInner() {
               ) : (
                 <>
                   <Text style={styles.groceryHint}>
-                    Sorted by aisle. Tap a category to change it.
+                    Tap an aisle name to move an item. Use arrows to reorder aisles.
                   </Text>
                   {groceryGroups.map((group, index) => (
                     <View key={group.category}>
-                      <Text
-                        style={[
-                          styles.groceryGroupTitle,
-                          index === 0 ? { marginTop: 0 } : null,
-                        ]}
-                      >
-                        {group.label}
-                      </Text>
+                      <View style={styles.groceryArrangeRow}>
+                        <Text
+                          style={[
+                            styles.groceryGroupTitle,
+                            { marginTop: 0, flex: 1 },
+                          ]}
+                        >
+                          {group.label}
+                        </Text>
+                        <Pressable
+                          disabled={index === 0}
+                          onPress={() => {
+                            const visible = groceryGroups.map((row) => row.category);
+                            const next = moveCategoryOrder(
+                              categoryOrder,
+                              group.category,
+                              -1,
+                              visible,
+                            );
+                            void setGroceryCategoryOrder(next).then(setCategoryOrder);
+                          }}
+                        >
+                          <Text style={[styles.groceryMoveBtn, index === 0 && styles.disabled]}>
+                            ↑
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          disabled={index === groceryGroups.length - 1}
+                          onPress={() => {
+                            const visible = groceryGroups.map((row) => row.category);
+                            const next = moveCategoryOrder(
+                              categoryOrder,
+                              group.category,
+                              1,
+                              visible,
+                            );
+                            void setGroceryCategoryOrder(next).then(setCategoryOrder);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.groceryMoveBtn,
+                              index === groceryGroups.length - 1 && styles.disabled,
+                            ]}
+                          >
+                            ↓
+                          </Text>
+                        </Pressable>
+                      </View>
                       {group.items.map((item) => (
                         <View key={item.id} style={styles.checkRow}>
                           <Pressable
@@ -766,22 +922,9 @@ function AppInner() {
                             <Check checked={item.checked} />
                             <Text style={styles.checkLabel}>{item.label}</Text>
                           </Pressable>
-                          <Pressable
-                            onPress={() => {
-                              void setGroceryItemCategory(
-                                item.id,
-                                nextGroceryCategory(item.category),
-                              ).then((updated) => {
-                                setGrocery((current) =>
-                                  current.map((row) =>
-                                    row.id === updated.id ? updated : row,
-                                  ),
-                                );
-                              });
-                            }}
-                          >
+                          <Pressable onPress={() => setAssigningItem(item)}>
                             <Text style={styles.groceryCatChip}>
-                              {groceryCategoryLabel(item.category)}
+                              {groceryCategoryLabel(itemGroceryCategory(item))}
                             </Text>
                           </Pressable>
                           <Pressable
@@ -802,17 +945,91 @@ function AppInner() {
                 </>
               )}
             </ScrollView>
+            <View style={styles.groceryToolbar}>
+              <Pressable
+                style={[styles.groceryGhost, !grocery.length && styles.disabled]}
+                disabled={!grocery.length}
+                onPress={() => {
+                  const allChecked = grocery.length > 0 && grocery.every((item) => item.checked);
+                  void setAllGroceryChecked(!allChecked).then(setGrocery);
+                }}
+              >
+                <Text style={styles.groceryGhostText}>
+                  {grocery.length > 0 && grocery.every((item) => item.checked)
+                    ? "Uncheck all"
+                    : "Check all"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.groceryGhost,
+                  !grocery.some((item) => item.checked) && styles.disabled,
+                ]}
+                disabled={!grocery.some((item) => item.checked)}
+                onPress={() => void clearCheckedGrocery().then(setGrocery)}
+              >
+                <Text style={styles.groceryGhostText}>Clear checked</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.groceryGhost, !grocery.length && styles.disabled]}
+                disabled={!grocery.length}
+                onPress={() => void clearAllGrocery().then(setGrocery)}
+              >
+                <Text style={styles.groceryGhostText}>Clear all</Text>
+              </Pressable>
+            </View>
             <Pressable
-              style={styles.groceryGhost}
-              onPress={() => void clearCheckedGrocery().then(setGrocery)}
+              style={styles.primary}
+              onPress={() => {
+                setAssigningItem(null);
+                setGroceryOpen(false);
+              }}
             >
-              <Text style={styles.groceryGhostText}>Clear checked</Text>
-            </Pressable>
-            <Pressable style={styles.primary} onPress={() => setGroceryOpen(false)}>
               <Text style={styles.primaryText}>Close</Text>
             </Pressable>
           </View>
         </SafeAreaView>
+      </Modal>
+      <Modal
+        visible={Boolean(assigningItem)}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAssigningItem(null)}
+      >
+        <Pressable style={styles.groceryWrap} onPress={() => setAssigningItem(null)}>
+          <View style={styles.groceryCard}>
+            <Text style={styles.panelTitle}>Move to aisle</Text>
+            <Text style={styles.groceryHint}>
+              {assigningItem ? assigningItem.label : ""}
+            </Text>
+            {categoryOrder.map((category) => {
+              const selected =
+                assigningItem != null && itemGroceryCategory(assigningItem) === category;
+              return (
+                <Pressable
+                  key={category}
+                  style={[styles.groceryAssignRow, selected && styles.groceryAssignOn]}
+                  onPress={() => {
+                    if (!assigningItem) return;
+                    const id = assigningItem.id;
+                    setAssigningItem(null);
+                    void setGroceryItemCategory(id, category).then((updated) => {
+                      setGrocery((current) =>
+                        current.map((row) => (row.id === updated.id ? updated : row)),
+                      );
+                    });
+                  }}
+                >
+                  <Text style={styles.checkLabel}>{groceryCategoryLabel(category)}</Text>
+                  {selected ? <Text style={styles.groceryRemove}>Current</Text> : null}
+                </Pressable>
+              );
+            })}
+            <Pressable style={styles.groceryGhost} onPress={() => setAssigningItem(null)}>
+              <Text style={styles.groceryGhostText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -1161,7 +1378,34 @@ const styles = StyleSheet.create({
   },
   groceryList: { flexGrow: 0 },
   groceryListContent: { paddingBottom: 4 },
-  groceryHint: { color: "#5c6a62", fontSize: 13, marginBottom: 4 },
+  groceryHint: { color: "#5c6a62", fontSize: 13, marginBottom: 4, fontWeight: "600" },
+  groceryArrangeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+  },
+  groceryMoveBtn: {
+    color: "#142018",
+    fontSize: 16,
+    fontWeight: "700",
+    borderWidth: 1,
+    borderColor: "rgba(20,32,24,0.14)",
+    borderRadius: 8,
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  groceryToolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  groceryAssignRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  groceryAssignOn: { backgroundColor: "rgba(255,90,60,0.12)" },
   groceryGroupTitle: {
     color: "#5c6a62",
     fontSize: 12,
@@ -1184,6 +1428,7 @@ const styles = StyleSheet.create({
   },
   groceryRemove: { color: "#142018", fontWeight: "700", fontSize: 14 },
   groceryGhost: {
+    flexGrow: 1,
     borderWidth: 1,
     borderColor: "rgba(20,32,24,0.14)",
     borderRadius: 999,

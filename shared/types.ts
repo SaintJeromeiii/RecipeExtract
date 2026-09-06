@@ -13,12 +13,23 @@ export type Recipe = {
   steps: string[];
 };
 
+export type RecipeCategory =
+  | "breakfast"
+  | "lunch"
+  | "dinner"
+  | "drinks"
+  | "snacks"
+  | "dessert"
+  | "sides"
+  | "other";
+
 export type SavedRecipe = Recipe & {
   id: string;
   savedAt: string;
   favorite: boolean;
   notes: string;
   tags: string[];
+  categories: RecipeCategory[];
 };
 
 export type RecipePatch = Partial<
@@ -27,6 +38,7 @@ export type RecipePatch = Partial<
     | "favorite"
     | "notes"
     | "tags"
+    | "categories"
     | "title"
     | "description"
     | "yield"
@@ -59,6 +71,11 @@ export type GroceryItem = {
   recipeIds: string[];
   recipeTitles: string[];
   category?: GroceryCategory;
+};
+
+export type GroceryListState = {
+  items: GroceryItem[];
+  categoryOrder: GroceryCategory[];
 };
 
 export type ParsedIngredient = {

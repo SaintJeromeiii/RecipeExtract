@@ -6,13 +6,16 @@ import { extractRecipe, extractRecipeFromText } from "./extract.ts";
 import { isGroceryCategory } from "../shared/groceryCategories.ts";
 import {
   addGroceryLines,
+  clearAllGrocery,
   clearCheckedGrocery,
   listGrocery,
   listRecipes,
   removeGroceryItem,
   removeRecipe,
   saveRecipe,
+  setAllGroceryChecked,
   setGroceryCategory,
+  setGroceryCategoryOrder,
   setGroceryChecked,
   updateRecipe,
 } from "./store.ts";
@@ -25,7 +28,7 @@ const distDir = path.resolve(dirname, "../dist");
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
   if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
@@ -116,7 +119,7 @@ app.delete("/api/recipes/:id", async (req, res) => {
 });
 
 app.get("/api/grocery", async (_req, res) => {
-  res.json({ items: await listGrocery() });
+  res.json(await listGrocery());
 });
 
 app.post("/api/grocery", async (req, res) => {
@@ -134,6 +137,25 @@ app.post("/api/grocery", async (req, res) => {
       typeof req.body?.recipeTitle === "string" ? req.body.recipeTitle : undefined,
   });
   res.status(201).json({ items });
+});
+
+app.patch("/api/grocery/checked", async (req, res) => {
+  if (typeof req.body?.checked !== "boolean") {
+    res.status(400).json({ error: "Send { checked: true or false }." });
+    return;
+  }
+  const items = await setAllGroceryChecked(req.body.checked);
+  res.json({ items });
+});
+
+app.put("/api/grocery/order", async (req, res) => {
+  const categoryOrder = await setGroceryCategoryOrder(req.body?.categoryOrder ?? req.body?.order);
+  res.json({ categoryOrder });
+});
+
+app.delete("/api/grocery", async (_req, res) => {
+  const items = await clearAllGrocery();
+  res.json({ items });
 });
 
 app.patch("/api/grocery/:id", async (req, res) => {

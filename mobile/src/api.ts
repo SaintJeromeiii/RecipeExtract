@@ -2,17 +2,27 @@ import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { extractRecipe as extractFromPage } from "../../shared/extract";
 import { isSocialUrl, recipeFromCaption } from "../../shared/socialExtract";
-import type { GroceryCategory, GroceryItem, Recipe, RecipePatch, SavedRecipe } from "./types";
+import type {
+  GroceryCategory,
+  GroceryItem,
+  GroceryListState,
+  Recipe,
+  RecipePatch,
+  SavedRecipe,
+} from "./types";
 import {
   addGroceryLines,
+  clearAllGrocery as clearAll,
   clearCheckedGrocery as clearChecked,
   listGrocery as readGrocery,
   listRecipes,
   removeGroceryItem,
   removeRecipe,
   saveRecipe as persistRecipe,
-  setGroceryChecked,
+  setAllGroceryChecked as setAllChecked,
   setGroceryCategory,
+  setGroceryCategoryOrder as persistCategoryOrder,
+  setGroceryChecked,
   updateRecipe,
 } from "./localStore";
 
@@ -148,7 +158,7 @@ export async function removeSavedRecipe(id: string): Promise<void> {
   await removeRecipe(id);
 }
 
-export async function listGrocery(): Promise<GroceryItem[]> {
+export async function listGrocery(): Promise<GroceryListState> {
   return readGrocery();
 }
 
@@ -180,4 +190,18 @@ export async function removeGrocery(id: string): Promise<void> {
 
 export async function clearCheckedGrocery(): Promise<GroceryItem[]> {
   return clearChecked();
+}
+
+export async function clearAllGrocery(): Promise<GroceryItem[]> {
+  return clearAll();
+}
+
+export async function setAllGroceryChecked(checked: boolean): Promise<GroceryItem[]> {
+  return setAllChecked(checked);
+}
+
+export async function setGroceryCategoryOrder(
+  categoryOrder: GroceryCategory[],
+): Promise<GroceryCategory[]> {
+  return persistCategoryOrder(categoryOrder);
 }

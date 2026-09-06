@@ -2,25 +2,38 @@ import { useEffect, useMemo, useState } from "react";
 import {
   groceryCategoryLabel,
   groupGroceryItems,
-  nextGroceryCategory,
+  itemGroceryCategory,
+  moveCategoryOrder,
+  resolveCategoryOrder,
 } from "../shared/groceryCategories";
+import {
+  RECIPE_CATEGORIES,
+  recipeCategoryLabel,
+  recipeMatchesCategory,
+  toggleRecipeCategory,
+} from "../shared/recipeCategories";
 import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingredients";
 import { recipeAsText } from "../shared/share-text";
 import { StepWithTimers, useCookTimers, useWakeLock } from "./kitchen";
 import {
   addGrocery,
+  clearAllGrocery,
   clearCheckedGrocery,
   listGrocery,
   listSavedRecipes,
   removeGrocery,
   removeSavedRecipe,
   saveRecipe,
+  setAllGroceryChecked,
+  setGroceryCategoryOrder,
   setGroceryItemCategory,
   setGroceryItemChecked,
   setRecipeFavorite,
   updateSavedRecipe,
 } from "./library";
-import type { GroceryItem, Recipe, SavedRecipe } from "./types";
+import type { GroceryCategory, GroceryItem, Recipe, RecipeCategory, SavedRecipe } from "./types";
+
+type LibraryFilter = "all" | "favorites" | RecipeCategory;
 
 const EXAMPLES = [
   {
@@ -59,10 +72,13 @@ export default function App() {
   const [cookIndex, setCookIndex] = useState(0);
   const [showCookIngredients, setShowCookIngredients] = useState(false);
   const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>([]);
-  const [libraryFilter, setLibraryFilter] = useState<"all" | "favorites">("all");
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [grocery, setGrocery] = useState<GroceryItem[]>([]);
+  const [categoryOrder, setCategoryOrder] = useState<GroceryCategory[]>(() =>
+    resolveCategoryOrder(),
+  );
   const [groceryOpen, setGroceryOpen] = useState(false);
   const [servings, setServings] = useState(4);
   const [baseServings, setBaseServings] = useState(4);
@@ -90,7 +106,12 @@ export default function App() {
 
   useEffect(() => {
     void listSavedRecipes().then(setSavedRecipes).catch(() => {});
-    void listGrocery().then(setGrocery).catch(() => {});
+    void listGrocery()
+      .then(({ items, categoryOrder: order }) => {
+        setGrocery(items);
+        setCategoryOrder(order);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -542,6 +563,11 @@ export default function App() {
           onSaveNotes={() => void persistPatch({ notes: draftNotes })}
           onAddTag={() => void addTag(draftTag)}
           onRemoveTag={(tag) => void removeTag(tag)}
+          onToggleCategory={(category) =>
+            void persistPatch({
+              categories: toggleRecipeCategory(savedMatch?.categories, category),
+            })
+          }
           onSave={() => void handleSave()}
           onFavorite={() => void handleFavorite(savedMatch)}
           onRemove={() => {
@@ -584,6 +610,7 @@ export default function App() {
       {groceryOpen && (
         <GroceryPanel
           items={grocery}
+          categoryOrder={categoryOrder}
           onClose={() => setGroceryOpen(false)}
           onToggle={async (item) => {
             const updated = await setGroceryItemChecked(item.id, !item.checked);
@@ -591,21 +618,29 @@ export default function App() {
               current.map((row) => (row.id === updated.id ? updated : row)),
             );
           }}
-          onCategory={async (item) => {
-            const updated = await setGroceryItemCategory(
-              item.id,
-              nextGroceryCategory(item.category),
-            );
+          onCategory={async (item, category) => {
+            const updated = await setGroceryItemCategory(item.id, category);
             setGrocery((current) =>
               current.map((row) => (row.id === updated.id ? updated : row)),
             );
+          }}
+          onMoveCategory={async (category, direction, visible) => {
+            const next = moveCategoryOrder(categoryOrder, category, direction, visible);
+            setCategoryOrder(await setGroceryCategoryOrder(next));
           }}
           onRemove={async (id) => {
             await removeGrocery(id);
             setGrocery((current) => current.filter((item) => item.id !== id));
           }}
+          onCheckAll={async () => {
+            const allChecked = grocery.length > 0 && grocery.every((item) => item.checked);
+            setGrocery(await setAllGroceryChecked(!allChecked));
+          }}
           onClear={async () => {
             setGrocery(await clearCheckedGrocery());
+          }}
+          onClearAll={async () => {
+            setGrocery(await clearAllGrocery());
           }}
         />
       )}
@@ -701,6 +736,7 @@ function RecipeView({
   onSaveNotes,
   onAddTag,
   onRemoveTag,
+  onToggleCategory,
   onSave,
   onFavorite,
   onRemove,
@@ -741,6 +777,7 @@ function RecipeView({
   onSaveNotes: () => void;
   onAddTag: () => void;
   onRemoveTag: (tag: string) => void;
+  onToggleCategory: (category: RecipeCategory) => void;
   onSave: () => void;
   onFavorite: () => void;
   onRemove: () => void;
@@ -947,6 +984,27 @@ function RecipeView({
 
       <section className="notes-panel">
         <div className="panel-head">
+          <h2>Meal</h2>
+        </div>
+        <div className="tag-row">
+          {RECIPE_CATEGORIES.map((category) => {
+            const on = (saved?.categories ?? []).includes(category);
+            return (
+              <button
+                key={category}
+                className={`chip ${on ? "is-on" : ""}`}
+                onClick={() => onToggleCategory(category)}
+                disabled={busy}
+              >
+                {recipeCategoryLabel(category)}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="notes-panel">
+        <div className="panel-head">
           <h2>Notes & tags</h2>
         </div>
         <div className="tag-row">
@@ -1104,15 +1162,18 @@ function SavedLibrary({
   onFavorite,
 }: {
   recipes: SavedRecipe[];
-  filter: "all" | "favorites";
+  filter: LibraryFilter;
   query: string;
   onQuery: (value: string) => void;
-  onFilter: (filter: "all" | "favorites") => void;
+  onFilter: (filter: LibraryFilter) => void;
   onOpen: (recipe: SavedRecipe) => void;
   onFavorite: (recipe: SavedRecipe) => void;
 }) {
   const visible = recipes.filter((item) => {
     if (filter === "favorites" && !item.favorite) return false;
+    if (filter !== "all" && filter !== "favorites" && !recipeMatchesCategory(item, filter)) {
+      return false;
+    }
     return matchesQuery(item, query);
   });
 
@@ -1133,6 +1194,16 @@ function SavedLibrary({
           >
             Favorites {recipes.filter((item) => item.favorite).length}
           </button>
+          {RECIPE_CATEGORIES.map((category) => (
+            <button
+              key={category}
+              className={`chip ${filter === category ? "is-on" : ""}`}
+              onClick={() => onFilter(category)}
+            >
+              {recipeCategoryLabel(category)}{" "}
+              {recipes.filter((item) => recipeMatchesCategory(item, category)).length}
+            </button>
+          ))}
         </div>
       </div>
       <input
@@ -1163,6 +1234,9 @@ function SavedLibrary({
                     <em>
                       {item.sourceName ?? "Saved recipe"}
                       {item.favorite ? " · Favorite" : ""}
+                      {item.categories.length
+                        ? ` · ${item.categories.map(recipeCategoryLabel).join(", ")}`
+                        : ""}
                       {item.tags.length ? ` · ${item.tags.join(", ")}` : ""}
                     </em>
                   </span>
@@ -1185,20 +1259,34 @@ function SavedLibrary({
 
 function GroceryPanel({
   items,
+  categoryOrder,
   onClose,
   onToggle,
   onCategory,
+  onMoveCategory,
   onRemove,
+  onCheckAll,
   onClear,
+  onClearAll,
 }: {
   items: GroceryItem[];
+  categoryOrder: GroceryCategory[];
   onClose: () => void;
   onToggle: (item: GroceryItem) => void;
-  onCategory: (item: GroceryItem) => void;
+  onCategory: (item: GroceryItem, category: GroceryCategory) => void;
+  onMoveCategory: (
+    category: GroceryCategory,
+    direction: -1 | 1,
+    visible?: GroceryCategory[],
+  ) => void;
   onRemove: (id: string) => void;
+  onCheckAll: () => void;
   onClear: () => void;
+  onClearAll: () => void;
 }) {
-  const groups = groupGroceryItems(items);
+  const groups = groupGroceryItems(items, categoryOrder);
+  const visible = groups.map((group) => group.category);
+  const allChecked = items.length > 0 && items.every((item) => item.checked);
   return (
     <div className="grocery" role="dialog" aria-label="Grocery list">
       <div className="grocery-card">
@@ -1208,16 +1296,66 @@ function GroceryPanel({
             Close
           </button>
         </div>
+        <details className="grocery-arrange">
+          <summary>Arrange aisles</summary>
+          <ol>
+            {categoryOrder.map((category, index) => (
+              <li key={category}>
+                <span>{groceryCategoryLabel(category)}</span>
+                <span className="grocery-move">
+                  <button
+                    type="button"
+                    disabled={index === 0}
+                    onClick={() => onMoveCategory(category, -1, categoryOrder)}
+                    aria-label={`Move ${groceryCategoryLabel(category)} up`}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    disabled={index === categoryOrder.length - 1}
+                    onClick={() => onMoveCategory(category, 1, categoryOrder)}
+                    aria-label={`Move ${groceryCategoryLabel(category)} down`}
+                  >
+                    ↓
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </details>
         {items.length === 0 ? (
           <p className="library-empty">
             Open a recipe and tap Add to grocery for unchecked ingredients.
           </p>
         ) : (
           <div className="grocery-list">
-            <p className="grocery-hint">Sorted by aisle. Tap a category to change it.</p>
+            <p className="grocery-hint">
+              Pick an aisle for each item. Use the arrows to reorder aisles.
+            </p>
             {groups.map((group) => (
               <section key={group.category} className="grocery-group">
-                <h3 className="grocery-group-title">{group.label}</h3>
+                <div className="grocery-group-head">
+                  <h3 className="grocery-group-title">{group.label}</h3>
+                  <span className="grocery-move">
+                    <button
+                      type="button"
+                      disabled={visible[0] === group.category}
+                      onClick={() => onMoveCategory(group.category, -1, visible)}
+                      aria-label={`Move ${group.label} up`}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={visible[visible.length - 1] === group.category}
+                      onClick={() => onMoveCategory(group.category, 1, visible)}
+                      aria-label={`Move ${group.label} down`}
+                    >
+                      ↓
+                    </button>
+                  </span>
+                </div>
                 <ul>
                   {group.items.map((item) => (
                     <li key={item.id} className={item.checked ? "is-done" : ""}>
@@ -1235,14 +1373,22 @@ function GroceryPanel({
                         </span>
                       </label>
                       <div className="grocery-item-actions">
-                        <button
-                          type="button"
-                          className="grocery-cat"
-                          onClick={() => onCategory(item)}
-                          title="Change category"
-                        >
-                          {groceryCategoryLabel(item.category)}
-                        </button>
+                        <label className="grocery-cat-label">
+                          <span className="visually-hidden">Move {item.label} to aisle</span>
+                          <select
+                            className="grocery-cat"
+                            value={itemGroceryCategory(item)}
+                            onChange={(event) =>
+                              onCategory(item, event.target.value as GroceryCategory)
+                            }
+                          >
+                            {categoryOrder.map((category) => (
+                              <option key={category} value={category}>
+                                {groceryCategoryLabel(category)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                         <button className="text-btn" onClick={() => onRemove(item.id)}>
                           Remove
                         </button>
@@ -1254,9 +1400,17 @@ function GroceryPanel({
             ))}
           </div>
         )}
-        <button className="ghost" onClick={onClear}>
-          Clear checked
-        </button>
+        <div className="grocery-toolbar">
+          <button className="ghost" disabled={!items.length} onClick={onCheckAll}>
+            {allChecked ? "Uncheck all" : "Check all"}
+          </button>
+          <button className="ghost" disabled={!items.some((item) => item.checked)} onClick={onClear}>
+            Clear checked
+          </button>
+          <button className="ghost" disabled={!items.length} onClick={onClearAll}>
+            Clear all
+          </button>
+        </div>
       </div>
     </div>
   );

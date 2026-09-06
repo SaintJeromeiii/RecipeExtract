@@ -446,6 +446,67 @@ a {
   font-size: 0.88rem;
 }
 
+.grocery-arrange {
+  margin: 0 0 0.75rem;
+  color: var(--ink);
+}
+
+.grocery-arrange summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.grocery-arrange ol {
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+}
+
+.grocery-arrange li,
+.grocery-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.grocery-arrange li {
+  padding: 0.35rem 0;
+  border-top: 1px solid rgba(20, 32, 24, 0.1);
+}
+
+.grocery-move {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.grocery-move button {
+  min-width: 1.8rem;
+  border: 1px solid rgba(20, 32, 24, 0.14);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 0.45rem;
+  padding: 0.1rem 0.35rem;
+  line-height: 1.2;
+}
+
+.grocery-move button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.grocery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.grocery-toolbar .ghost {
+  flex: 1;
+  min-width: 6.5rem;
+}
+
 .grocery-group {
   margin: 0;
   padding: 0;
@@ -465,6 +526,10 @@ a {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-soft);
+}
+
+.grocery-group-head .grocery-group-title {
+  margin: 0.7rem 0 0.1rem;
 }
 
 .grocery-group:first-of-type .grocery-group-title {
@@ -503,14 +568,31 @@ a {
   flex-shrink: 0;
 }
 
+.grocery-cat-label {
+  display: inline-flex;
+}
+
 .grocery-cat {
   border: 1px solid rgba(20, 32, 24, 0.14);
-  background: transparent;
+  background: var(--paper);
   color: var(--ink-soft);
   border-radius: 999px;
   padding: 0.18rem 0.55rem;
   font-size: 0.75rem;
   font-weight: 600;
+  max-width: 7.5rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .grocery-list em {
@@ -547,6 +629,7 @@ a {
 
 .library-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.45rem;
 }
 
