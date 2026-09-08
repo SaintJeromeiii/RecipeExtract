@@ -12,16 +12,19 @@
     "start:android": "npm run start --prefix mobile",
     "apk": "npm run apk --prefix mobile",
     "apk:install": "npm run apk:install --prefix mobile",
+    "aab": "npm run aab --prefix mobile",
     "keystore": "npm run keystore --prefix mobile",
     "build": "tsc --noEmit && vite build",
     "start": "tsx server/index.ts",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "cheerio": "^1.1.2",
     "express": "^5.1.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

@@ -22,6 +22,15 @@ function runYtDlp(url: string): Promise<YtDlpInfo> {
         "--no-download",
         "--no-warnings",
         "--skip-download",
+        "--no-playlist",
+        "--socket-timeout",
+        "15",
+        "--retries",
+        "2",
+        "--user-agent",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "--referer",
+        "https://www.tiktok.com/",
         url,
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
@@ -31,7 +40,7 @@ function runYtDlp(url: string): Promise<YtDlpInfo> {
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       reject(new Error("Timed out reading that social video."));
-    }, 45000);
+    }, 25000);
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");

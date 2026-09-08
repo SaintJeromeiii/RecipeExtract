@@ -1,8 +1,14 @@
 import { recipeFromCaption } from "./captionRecipe";
-import { fetchOEmbedCaption, isSocialUrl, socialPlatform } from "./social";
+import {
+  fetchOEmbedCaption,
+  fetchTikTokPageCaption,
+  isSocialUrl,
+  normalizeSourceUrl,
+  socialPlatform,
+} from "./social";
 import type { Recipe } from "./types";
 
-export { isSocialUrl, socialPlatform } from "./social";
+export { isSocialUrl, normalizeSourceUrl, socialPlatform } from "./social";
 export { recipeFromCaption } from "./captionRecipe";
 
 type CaptionProvider = (url: string) => Promise<{
@@ -17,18 +23,19 @@ type CaptionProvider = (url: string) => Promise<{
  */
 export async function extractSocialRecipe(
   sourceUrl: string,
-  providers: CaptionProvider[] = [fetchOEmbedCaption],
+  providers: CaptionProvider[] = [fetchOEmbedCaption, fetchTikTokPageCaption],
 ): Promise<Recipe> {
-  if (!isSocialUrl(sourceUrl)) {
+  const url = normalizeSourceUrl(sourceUrl);
+  if (!isSocialUrl(url)) {
     throw new Error("Not a social media URL.");
   }
 
   const errors: string[] = [];
   for (const provider of providers) {
     try {
-      const result = await provider(sourceUrl);
+      const result = await provider(url);
       if (!result?.caption?.trim()) continue;
-      return recipeFromCaption(result.caption, sourceUrl, {
+      return recipeFromCaption(result.caption, url, {
         title: result.title,
         author: result.author,
         image: result.image,
@@ -38,10 +45,12 @@ export async function extractSocialRecipe(
     }
   }
 
-  const platform = socialPlatform(sourceUrl);
+  const platform = socialPlatform(url);
   const hint =
-    platform === "facebook"
-      ? "Facebook Reels need the recipe extractor service (or paste the caption text)."
-      : "Couldn't read a recipe from that post. Paste the caption text instead.";
+    platform === "tiktok"
+      ? "Couldn't read a recipe from that TikTok. Paste the caption (ingredients and steps) instead."
+      : platform === "facebook"
+        ? "Facebook Reels need the recipe extractor service (or paste the caption text)."
+        : "Couldn't read a recipe from that post. Paste the caption text instead.";
   throw new Error(errors[0] ? `${hint} ${errors[0]}` : hint);
 }

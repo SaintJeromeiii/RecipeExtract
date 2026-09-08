@@ -1,6 +1,6 @@
 import type { Recipe } from "./types";
 import { recipeFromCaption } from "./captionRecipe";
-import { fetchOEmbedCaption, isSocialUrl } from "./social";
+import { fetchOEmbedCaption, firstHttpUrl, isSocialUrl } from "./social";
 
 const JUNK_LINE =
   /^(jump to|pin (this|it)|share this|advertisement|you may also|subscribe|related recipes|print recipe|save recipe|rate this|leave a comment|this post (contains|may contain)|affiliate|as an amazon|shop this|more recipes|don't miss|sign up)/i;
@@ -270,7 +270,7 @@ function isPrivateIpv4(host: string): boolean {
 export function assertSafeUrl(raw: string): URL {
   let parsed: URL;
   try {
-    parsed = new URL(raw.trim());
+    parsed = new URL(firstHttpUrl(raw) || raw.trim());
   } catch {
     throw new Error("Enter a valid http(s) recipe URL.");
   }

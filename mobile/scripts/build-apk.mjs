@@ -8,10 +8,12 @@ const mobileDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const androidDir = path.join(mobileDir, "android");
 const distDir = path.join(mobileDir, "dist");
 const apkDest = path.join(distDir, "RecipeGuru.apk");
+const aabDest = path.join(distDir, "RecipeGuru.aab");
 const apiUrl =
   process.env.EXPO_PUBLIC_API_URL ||
   "https://recipeextract-production.up.railway.app";
 const wantInstall = process.argv.includes("--install");
+const wantAab = process.argv.includes("--aab");
 const sdkHome =
   process.env.ANDROID_HOME ||
   process.env.ANDROID_SDK_ROOT ||
@@ -153,27 +155,31 @@ if (!fs.existsSync(path.join(sdkHome, "platform-tools"))) {
   process.exit(1);
 }
 
-console.log("RecipeGuru local APK");
+console.log(wantAab ? "RecipeGuru Play Store AAB" : "RecipeGuru local APK");
 console.log(`API: ${apiUrl}`);
 run("npx", ["expo", "prebuild", "--platform", "android", "--non-interactive"]);
 applyReleaseSigning();
 run(
   path.join(androidDir, "gradlew"),
-  [":app:assembleRelease", "--quiet"],
+  [wantAab ? ":app:bundleRelease" : ":app:assembleRelease", "--quiet"],
   androidDir,
 );
 
-const built = path.join(
-  androidDir,
-  "app/build/outputs/apk/release/app-release.apk",
-);
+const built = wantAab
+  ? path.join(androidDir, "app/build/outputs/bundle/release/app-release.aab")
+  : path.join(androidDir, "app/build/outputs/apk/release/app-release.apk");
+const dest = wantAab ? aabDest : apkDest;
 if (!fs.existsSync(built)) {
-  console.error(`Gradle finished but no APK at ${built}`);
+  console.error(`Gradle finished but no package at ${built}`);
   process.exit(1);
 }
 fs.mkdirSync(distDir, { recursive: true });
-fs.copyFileSync(built, apkDest);
-console.log(`\nAPK ready: ${apkDest}`);
+fs.copyFileSync(built, dest);
+console.log(`\n${wantAab ? "AAB" : "APK"} ready: ${dest}`);
+
+if (wantAab) {
+  process.exit(0);
+}
 
 if (wantInstall) {
   const adb = path.join(sdkHome, "platform-tools/adb");

@@ -2,7 +2,7 @@
   "expo": {
     "name": "RecipeGuru",
     "slug": "recipe-extract",
-    "version": "1.0.0",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -19,7 +19,8 @@
     },
     "android": {
       "package": "com.recipeextract.app",
-      "usesCleartextTraffic": true,
+      "versionCode": 7,
+      "usesCleartextTraffic": false,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#0E1519",
@@ -63,13 +64,25 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["text/*"],
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsText": true
+          }
+        }
+      ],
       "expo-sharing"
     ],
     "extra": {
       "eas": {
         "projectId": "848665db-eb82-44cb-9dcb-9b640fb7239a"
       },
-      "apiUrl": "https://recipeextract-production.up.railway.app"
+      "apiUrl": "https://recipeextract-production.up.railway.app",
+      "privacyUrl": "https://recipeextract-production.up.railway.app/privacy.html",
+      "testersUrl": "https://recipeextract-production.up.railway.app/testers.html"
     },
     "owner": "jleonanderson12"
   }

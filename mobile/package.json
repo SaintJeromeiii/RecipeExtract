@@ -1,6 +1,6 @@
 {
   "name": "mobile",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "main": "index.ts",
   "dependencies": {
     "@expo/ngrok": "^4.1.3",
@@ -11,6 +11,7 @@
     "expo-keep-awake": "~57.0.1",
     "expo-linking": "~57.0.9",
     "expo-print": "~57.0.1",
+    "expo-share-intent": "^8.0.1",
     "expo-sharing": "~57.0.17",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
@@ -26,6 +27,7 @@
     "android": "expo run:android",
     "apk": "node ./scripts/build-apk.mjs",
     "apk:install": "node ./scripts/build-apk.mjs --install",
+    "aab": "node ./scripts/build-apk.mjs --aab",
     "keystore": "node ./scripts/setup-keystore.mjs",
     "ios": "expo run:ios",
     "web": "expo start --web"

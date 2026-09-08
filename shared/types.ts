@@ -78,6 +78,18 @@ export type GroceryListState = {
   categoryOrder: GroceryCategory[];
 };
 
+export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export type WeeklyMeal = {
+  id: string;
+  title: string;
+  recipeId: string | null;
+  ingredients: string[];
+  weekday: Weekday | null;
+  checked: boolean;
+  addedAt: string;
+};
+
 export type ParsedIngredient = {
   amount: number | null;
   unit: string | null;

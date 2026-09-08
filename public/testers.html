@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RecipeGuru tester notes</title>
+  <style>
+    :root {
+      --bg: #0e1519;
+      --surface: #162126;
+      --border: #2a3a40;
+      --text: #f7f3eb;
+      --muted: #c4b8a8;
+      --accent: #ff5a3c;
+      --mint: #5ec8b6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 28px;
+    }
+    h1 { font-size: 2rem; margin: 0 0 0.25rem; }
+    h2 { margin-top: 2rem; font-size: 1.1rem; color: var(--mint); }
+    p, li { color: var(--muted); }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+    a { color: var(--mint); }
+    code {
+      color: var(--text);
+      background: #0e1519;
+      padding: 0.1em 0.4em;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <article class="card">
+      <div class="eyebrow">RecipeGuru</div>
+      <h1>Closed test notes</h1>
+      <p>
+        Use the Android app, not this website, for testing. Recipes you save in the app
+        stay on your phone. Uninstalling deletes them unless you export a backup from Help.
+      </p>
+
+      <p>
+        Join the closed test Google Group:
+        <a href="https://groups.google.com/g/recipeguru-testers">recipeguru-testers</a>
+        (<code>recipeguru-testers@googlegroups.com</code>). Play Console closed testing
+        should use this group as the tester list.
+      </p>
+
+      <h2>10-minute path</h2>
+      <ol>
+        <li>Open RecipeGuru. Read the short Help sheet, then dismiss it.</li>
+        <li>Tap <strong>Try a sample recipe</strong>. Save it, add it to This week, open Grocery, then Start cooking.</li>
+        <li>Paste a recipe <em>blog</em> URL (not a homepage). Extract. Check ingredients and steps.</li>
+        <li>Paste a public TikTok or Instagram recipe URL. If it fails, switch to Caption text and paste the caption.</li>
+        <li>From Instagram/TikTok, try Share → RecipeGuru. If the link does not land, copy the link, open RecipeGuru, and accept the copied-link prompt.</li>
+        <li>Export a backup from Help, then Report a problem if anything failed. Include the exact URL and a screenshot.</li>
+      </ol>
+
+      <h2>What “working” looks like</h2>
+      <ul>
+        <li>A blog recipe comes back with a title, ingredients, and steps in under 15 seconds.</li>
+        <li>A social post either extracts, or clearly tells you to paste the caption — it should not show an empty “Social recipe.”</li>
+        <li>Weekly meals add grocery items. Checking items in Grocery sticks after you close the sheet.</li>
+      </ul>
+
+      <h2>Please do not</h2>
+      <ul>
+        <li>Hammer Extract on the same Reel over and over. There is an hourly clip limit.</li>
+        <li>Use the Railway website as your kitchen. That is a demo page; your phone is the product.</li>
+        <li>Send private/login-wall recipes. Public posts and public blogs only.</li>
+      </ul>
+
+      <p>
+        Privacy:
+        <a href="/privacy.html">Privacy policy</a>
+      </p>
+    </article>
+  </main>
+</body>
+</html>

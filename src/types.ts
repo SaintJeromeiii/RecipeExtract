@@ -8,4 +8,6 @@ export type {
   TimerMatch,
   GroceryCategory,
   RecipeCategory,
+  Weekday,
+  WeeklyMeal,
 } from "../shared/types";

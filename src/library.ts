@@ -1,138 +1,41 @@
-import type {
-  GroceryCategory,
-  GroceryItem,
-  GroceryListState,
-  Recipe,
-  RecipePatch,
-  SavedRecipe,
-} from "./types";
+import { createKitchenStore } from "../shared/kitchenStore";
 
-async function readJson<T>(response: Response): Promise<T> {
-  if (response.status === 204) return undefined as T;
-  const data = (await response.json()) as T & { error?: string };
-  if (!response.ok) {
-    throw new Error(data.error || "Request failed.");
-  }
-  return data;
-}
+const STORAGE_KEY = "recipeextract.store.v1";
 
-export async function listSavedRecipes(): Promise<SavedRecipe[]> {
-  const response = await fetch("/api/recipes");
-  const data = await readJson<{ recipes: SavedRecipe[] }>(response);
-  return data.recipes;
-}
+const kitchen = createKitchenStore({
+  async read() {
+    try {
+      return localStorage.getItem(STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  },
+  async write(value: string) {
+    localStorage.setItem(STORAGE_KEY, value);
+  },
+});
 
-export async function saveRecipe(recipe: Recipe): Promise<SavedRecipe> {
-  const response = await fetch("/api/recipes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(recipe),
-  });
-  return readJson<SavedRecipe>(response);
-}
+export const listSavedRecipes = kitchen.listRecipes;
+export const saveRecipe = kitchen.saveRecipe;
+export const updateSavedRecipe = kitchen.updateRecipe;
+export const removeSavedRecipe = kitchen.removeRecipe;
+export const listGrocery = kitchen.listGrocery;
+export const addGrocery = kitchen.addGroceryLines;
+export const setGroceryItemChecked = kitchen.setGroceryChecked;
+export const setGroceryItemCategory = kitchen.setGroceryCategory;
+export const removeGrocery = kitchen.removeGroceryItem;
+export const clearCheckedGrocery = kitchen.clearCheckedGrocery;
+export const clearAllGrocery = kitchen.clearAllGrocery;
+export const setAllGroceryChecked = kitchen.setAllGroceryChecked;
+export const setGroceryCategoryOrder = kitchen.setGroceryCategoryOrder;
+export const listWeeklyMeals = kitchen.listWeekly;
+export const addWeeklyMeal = kitchen.addWeeklyMeal;
+export const updateWeeklyMeal = kitchen.updateWeeklyMeal;
+export const removeWeeklyMeal = kitchen.removeWeeklyMeal;
+export const clearWeeklyMeals = kitchen.clearWeekly;
+export const exportKitchen = kitchen.exportStore;
+export const importKitchen = kitchen.importStore;
 
-export async function updateSavedRecipe(
-  id: string,
-  patch: RecipePatch,
-): Promise<SavedRecipe> {
-  const response = await fetch(`/api/recipes/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  return readJson<SavedRecipe>(response);
-}
-
-export async function setRecipeFavorite(
-  id: string,
-  favorite: boolean,
-): Promise<SavedRecipe> {
+export async function setRecipeFavorite(id: string, favorite: boolean) {
   return updateSavedRecipe(id, { favorite });
-}
-
-export async function removeSavedRecipe(id: string): Promise<void> {
-  const response = await fetch(`/api/recipes/${id}`, { method: "DELETE" });
-  await readJson<void>(response);
-}
-
-export async function listGrocery(): Promise<GroceryListState> {
-  const response = await fetch("/api/grocery");
-  return readJson<GroceryListState>(response);
-}
-
-export async function addGrocery(input: {
-  ingredients: string[];
-  recipeId?: string;
-  recipeTitle?: string;
-}): Promise<GroceryItem[]> {
-  const response = await fetch("/api/grocery", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const data = await readJson<{ items: GroceryItem[] }>(response);
-  return data.items;
-}
-
-export async function setGroceryItemChecked(
-  id: string,
-  checked: boolean,
-): Promise<GroceryItem> {
-  const response = await fetch(`/api/grocery/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ checked }),
-  });
-  return readJson<GroceryItem>(response);
-}
-
-export async function setGroceryItemCategory(
-  id: string,
-  category: GroceryCategory,
-): Promise<GroceryItem> {
-  const response = await fetch(`/api/grocery/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ category }),
-  });
-  return readJson<GroceryItem>(response);
-}
-
-export async function removeGrocery(id: string): Promise<void> {
-  const response = await fetch(`/api/grocery/${id}`, { method: "DELETE" });
-  await readJson<void>(response);
-}
-
-export async function clearCheckedGrocery(): Promise<GroceryItem[]> {
-  const response = await fetch("/api/grocery/checked", { method: "DELETE" });
-  const data = await readJson<{ items: GroceryItem[] }>(response);
-  return data.items;
-}
-
-export async function clearAllGrocery(): Promise<GroceryItem[]> {
-  const response = await fetch("/api/grocery", { method: "DELETE" });
-  const data = await readJson<{ items: GroceryItem[] }>(response);
-  return data.items;
-}
-
-export async function setAllGroceryChecked(checked: boolean): Promise<GroceryItem[]> {
-  const response = await fetch("/api/grocery/checked", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ checked }),
-  });
-  const data = await readJson<{ items: GroceryItem[] }>(response);
-  return data.items;
-}
-
-export async function setGroceryCategoryOrder(
-  categoryOrder: GroceryCategory[],
-): Promise<GroceryCategory[]> {
-  const response = await fetch("/api/grocery/order", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ categoryOrder }),
-  });
-  const data = await readJson<{ categoryOrder: GroceryCategory[] }>(response);
-  return data.categoryOrder;
 }

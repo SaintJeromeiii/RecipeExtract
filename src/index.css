@@ -1,4 +1,19 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Outfit:wght@400;500;600;700&display=swap");
+@layer theme, legacy, utilities;
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap");
+@import "tailwindcss/theme" layer(theme);
+@import "tailwindcss/utilities" layer(utilities);
+
+@theme {
+  --font-display: "Playfair Display", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Inter", "Segoe UI", sans-serif;
+  --color-ivory: #fdfbf7;
+  --color-oatmeal: #f4f0ea;
+  --color-sage: #e4e7dd;
+  --color-olive: #3f4a3a;
+  --color-terracotta: #2f6aa0;
+  --color-espresso: #1c3d5c;
+  --color-ink: #1a3044;
+}
 
 :root {
   --bg: #0e1519;
@@ -23,6 +38,7 @@
   --serif: "Fraunces", "Iowan Old Style", serif;
 }
 
+@layer legacy {
 * {
   box-sizing: border-box;
 }
@@ -127,14 +143,18 @@ a {
 .brand-mark {
   width: 2.15rem;
   height: 2.15rem;
-  display: grid;
-  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  display: block;
   border-radius: 0.7rem;
-  background: linear-gradient(160deg, var(--accent), #ff7a45);
-  color: var(--accent-ink);
-  font-family: var(--serif);
-  font-weight: 700;
-  box-shadow: 0 8px 18px rgba(255, 90, 60, 0.28);
+  background: #0e1519;
+}
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .hero {
@@ -281,28 +301,6 @@ a {
   color: var(--danger);
 }
 
-.examples {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 1.15rem;
-  color: var(--muted);
-  font-size: 0.92rem;
-}
-
-.examples span {
-  width: 100%;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.examples .chip {
-  background: var(--bg-2);
-}
-
 .topbar-actions {
   display: flex;
   gap: 0.5rem;
@@ -444,6 +442,47 @@ a {
   margin: 0 0 0.35rem;
   color: var(--ink-soft);
   font-size: 0.88rem;
+}
+
+.grocery-add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.45rem;
+  margin: 0 0 0.85rem;
+}
+
+.grocery-add input {
+  width: 100%;
+  border: 1px solid rgba(20, 32, 24, 0.14);
+  background: #fffaf2;
+  color: var(--ink);
+  border-radius: 0.9rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.undo-toast {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  max-width: min(28rem, calc(100vw - 2rem));
+  padding: 0.75rem 0.8rem 0.75rem 1.05rem;
+  border: 1px solid rgba(63, 74, 58, 0.18);
+  border-radius: 999px;
+  background: #f4f0ea;
+  color: #1c3d5c;
+}
+
+.undo-toast button {
+  border: 0;
+  background: #3f4a3a;
+  color: #fdfbf7;
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
 }
 
 .grocery-arrange {
@@ -1109,4 +1148,5 @@ a {
     box-shadow: none;
     color: black;
   }
+}
 }

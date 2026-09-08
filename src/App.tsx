@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { firstHttpUrl, isSocialUrl } from "../shared/social";
+import { EXTRACT_WAIT_HINT, SAMPLE_RECIPE } from "../shared/recipeQuality";
 import {
   groceryCategoryLabel,
   groupGroceryItems,
@@ -9,20 +11,23 @@ import {
 import {
   RECIPE_CATEGORIES,
   recipeCategoryLabel,
-  recipeMatchesCategory,
   toggleRecipeCategory,
 } from "../shared/recipeCategories";
-import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingredients";
+import { parseServings, scaleIngredientLine } from "../shared/ingredients";
 import { recipeAsText } from "../shared/share-text";
 import { StepWithTimers, useCookTimers, useWakeLock } from "./kitchen";
 import {
   addGrocery,
+  addWeeklyMeal,
   clearAllGrocery,
   clearCheckedGrocery,
+  clearWeeklyMeals,
   listGrocery,
   listSavedRecipes,
+  listWeeklyMeals,
   removeGrocery,
   removeSavedRecipe,
+  removeWeeklyMeal,
   saveRecipe,
   setAllGroceryChecked,
   setGroceryCategoryOrder,
@@ -30,27 +35,35 @@ import {
   setGroceryItemChecked,
   setRecipeFavorite,
   updateSavedRecipe,
+  updateWeeklyMeal,
 } from "./library";
-import type { GroceryCategory, GroceryItem, Recipe, RecipeCategory, SavedRecipe } from "./types";
+import { SavedLibrary } from "./SavedLibrary";
+import { WeeklyMenu } from "./WeeklyMenu";
+import type {
+  GroceryCategory,
+  GroceryItem,
+  Recipe,
+  RecipeCategory,
+  SavedRecipe,
+  WeeklyMeal,
+} from "./types";
 
 type LibraryFilter = "all" | "favorites" | RecipeCategory;
 
-const EXAMPLES = [
-  {
-    label: "Lentil soup",
-    url: "https://cookieandkate.com/best-lentil-soup-recipe/",
-  },
-  {
-    label: "Banana bread",
-    url: "https://www.loveandlemons.com/banana-bread/",
-  },
-  {
-    label: "Vegan paella",
-    url: "https://minimalistbaker.com/easy-vegan-paella/",
-  },
-];
-
 type View = "home" | "recipe";
+
+const HOUSEHOLD_KEY_STORAGE = "recipeextract.household-key";
+
+function webExtractHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  try {
+    const key = localStorage.getItem(HOUSEHOLD_KEY_STORAGE)?.trim();
+    if (key) headers["X-RecipeGuru-Key"] = key;
+  } catch {
+    // Private mode / blocked storage.
+  }
+  return headers;
+}
 
 function recipeKey(recipe: Pick<Recipe, "sourceUrl">): string {
   return recipe.sourceUrl.replace(/\/$/, "");
@@ -75,6 +88,7 @@ export default function App() {
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryBusy, setLibraryBusy] = useState(false);
+  const [weekly, setWeekly] = useState<WeeklyMeal[]>([]);
   const [grocery, setGrocery] = useState<GroceryItem[]>([]);
   const [categoryOrder, setCategoryOrder] = useState<GroceryCategory[]>(() =>
     resolveCategoryOrder(),
@@ -89,6 +103,9 @@ export default function App() {
   const [draftSteps, setDraftSteps] = useState("");
   const [draftNotes, setDraftNotes] = useState("");
   const [draftTag, setDraftTag] = useState("");
+  const [removedRecipe, setRemovedRecipe] = useState<SavedRecipe | null>(null);
+  const [householdKey, setHouseholdKey] = useState("");
+  const [householdSaved, setHouseholdSaved] = useState(false);
   const timers = useCookTimers();
   useWakeLock(cookOpen);
 
@@ -105,7 +122,13 @@ export default function App() {
   );
 
   useEffect(() => {
+    try {
+      setHouseholdKey(localStorage.getItem(HOUSEHOLD_KEY_STORAGE) || "");
+    } catch {
+      // Private mode / blocked storage.
+    }
     void listSavedRecipes().then(setSavedRecipes).catch(() => {});
+    void listWeeklyMeals().then(setWeekly).catch(() => {});
     void listGrocery()
       .then(({ items, categoryOrder: order }) => {
         setGrocery(items);
@@ -113,6 +136,12 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!removedRecipe) return;
+    const timer = window.setTimeout(() => setRemovedRecipe(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [removedRecipe?.id]);
 
   useEffect(() => {
     if (!recipe) return;
@@ -133,15 +162,16 @@ export default function App() {
       setError("Paste a recipe URL to get started.");
       return;
     }
-    setUrl(trimmed);
+    const extracted = firstHttpUrl(trimmed) || trimmed;
+    setUrl(extracted);
     setLoading(true);
     setError(null);
     setCookOpen(false);
     try {
       const response = await fetch("/api/extract", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: trimmed }),
+        headers: webExtractHeaders(),
+        body: JSON.stringify({ url: extracted }),
       });
       const data = (await response.json()) as Recipe & { error?: string };
       if (!response.ok) {
@@ -155,6 +185,7 @@ export default function App() {
     } catch (err) {
       setRecipe(null);
       setView("home");
+      setInputMode("caption");
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
@@ -174,7 +205,7 @@ export default function App() {
     try {
       const response = await fetch("/api/extract-text", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: webExtractHeaders(),
         body: JSON.stringify({
           text: trimmed,
           sourceUrl: url.trim() || undefined,
@@ -271,15 +302,153 @@ export default function App() {
   }
 
   async function handleRemove(saved: SavedRecipe) {
+    const ok = window.confirm(
+      `Delete “${saved.title}” from your collection? You can undo for a few seconds.`,
+    );
+    if (!ok) return;
     setLibraryBusy(true);
     setError(null);
     try {
       await removeSavedRecipe(saved.id);
       setSavedRecipes((current) => current.filter((item) => item.id !== saved.id));
+      setRemovedRecipe(saved);
+      if (recipe && recipeKey(recipe) === recipeKey(saved)) {
+        setView("home");
+        setRecipe(null);
+        setCookOpen(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove that recipe.");
     } finally {
       setLibraryBusy(false);
+    }
+  }
+
+  async function handleUndoRemove() {
+    if (!removedRecipe) return;
+    setLibraryBusy(true);
+    try {
+      upsertSaved(await saveRecipe(removedRecipe));
+      setRemovedRecipe(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not restore that recipe.");
+    } finally {
+      setLibraryBusy(false);
+    }
+  }
+
+  function upsertWeekly(meal: WeeklyMeal) {
+    setWeekly((current) => {
+      const next = current.some((item) => item.id === meal.id)
+        ? current.map((item) => (item.id === meal.id ? meal : item))
+        : [...current, meal];
+      return next;
+    });
+  }
+
+  async function handleAddWeeklyRecipe(target: SavedRecipe) {
+    setLibraryBusy(true);
+    setError(null);
+    try {
+      const result = await addWeeklyMeal({ recipeId: target.id });
+      upsertWeekly(result.meal);
+      setGrocery(result.grocery);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add that meal to the week.");
+    } finally {
+      setLibraryBusy(false);
+    }
+  }
+
+  async function handleAddWeeklyCustom(input: {
+    title: string;
+    ingredients: string[];
+  }) {
+    setLibraryBusy(true);
+    setError(null);
+    try {
+      const result = await addWeeklyMeal(input);
+      upsertWeekly(result.meal);
+      setGrocery(result.grocery);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add that meal to the week.");
+    } finally {
+      setLibraryBusy(false);
+    }
+  }
+
+  async function handleWeeklyFromRecipe() {
+    if (!recipe) return;
+    setLibraryBusy(true);
+    setError(null);
+    try {
+      const saved = savedMatch ?? (await saveRecipe(recipe));
+      if (!savedMatch) upsertSaved(saved);
+      const result = await addWeeklyMeal({ recipeId: saved.id });
+      upsertWeekly(result.meal);
+      setGrocery(result.grocery);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add that meal to the week.");
+    } finally {
+      setLibraryBusy(false);
+    }
+  }
+
+  async function handleRemoveWeekly(meal: WeeklyMeal) {
+    try {
+      await removeWeeklyMeal(meal.id);
+      setWeekly((current) => current.filter((item) => item.id !== meal.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove that meal.");
+    }
+  }
+
+  async function handleToggleWeekly(meal: WeeklyMeal, checked: boolean) {
+    try {
+      upsertWeekly(await updateWeeklyMeal(meal.id, { checked }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update that meal.");
+    }
+  }
+
+  async function handleClearWeekly() {
+    try {
+      setWeekly(await clearWeeklyMeals());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not clear the week.");
+    }
+  }
+
+  async function handleShopRecipe(target: SavedRecipe) {
+    if (!target.ingredients.length) {
+      setError("That recipe has no ingredients to shop.");
+      return;
+    }
+    setLibraryBusy(true);
+    setError(null);
+    try {
+      setGrocery(
+        await addGrocery({
+          ingredients: target.ingredients,
+          recipeId: target.id,
+          recipeTitle: target.title,
+        }),
+      );
+      setGroceryOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add to the grocery list.");
+    } finally {
+      setLibraryBusy(false);
+    }
+  }
+
+  async function handleAddGroceryLine(line: string) {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      setGrocery(await addGrocery({ ingredients: [trimmed] }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add that item.");
     }
   }
 
@@ -394,134 +563,235 @@ export default function App() {
     ].filter(Boolean) as string[];
   }, [recipe, servings]);
 
+  const groceryCount = grocery.filter((item) => !item.checked).length;
+  const weekRecipeIds = useMemo(
+    () => new Set(weekly.map((meal) => meal.recipeId).filter((id): id is string => Boolean(id))),
+    [weekly],
+  );
+  const goHome = () => {
+    setView("home");
+    setCookOpen(false);
+    setError(null);
+  };
+
   return (
-    <div className="app">
-      <header className="topbar">
-        <button
-          className="brand"
-          onClick={() => {
-            setView("home");
-            setCookOpen(false);
-            setError(null);
-          }}
-        >
-          <span className="brand-mark" aria-hidden="true">
-            R
-          </span>
-          RecipeGuru
-        </button>
-        <div className="topbar-actions">
-          <button className="ghost" onClick={() => setGroceryOpen(true)}>
-            Grocery {grocery.filter((item) => !item.checked).length}
+    <div className={view === "home" ? "min-h-screen bg-ivory font-sans text-ink scheme-light" : "app"}>
+      {view === "home" ? (
+        <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-olive/15 bg-ivory px-5 py-4 md:px-10">
+          <button
+            type="button"
+            className="flex items-center gap-2.5 border-0 bg-transparent p-0 font-display text-[1.65rem] tracking-tight text-espresso"
+            onClick={goHome}
+          >
+            <img
+              src="/owl-logo.png"
+              alt=""
+              className="h-10 w-10 rounded-2xl"
+            />
+            RecipeGuru
           </button>
-          {view === "recipe" && recipe ? (
-            <button className="ghost" onClick={() => openCook(0)}>
-              Cook mode
+          <div className="flex items-center gap-2">
+            <a
+              href="#this-week"
+              className="rounded-full border border-olive/20 px-4 py-2 text-[0.72rem] tracking-[0.16em] uppercase text-olive no-underline"
+            >
+              Week {weekly.length}
+            </a>
+            <button
+              type="button"
+              className="rounded-full border border-olive/20 px-4 py-2 text-[0.72rem] tracking-[0.16em] uppercase text-olive"
+              onClick={() => setGroceryOpen(true)}
+            >
+              Market {groceryCount}
             </button>
-          ) : null}
-        </div>
-      </header>
+          </div>
+        </header>
+      ) : (
+        <header className="topbar">
+          <button className="brand" onClick={goHome}>
+            <span className="brand-mark" aria-hidden="true">
+              <img src="/owl-logo.png" alt="" />
+            </span>
+            RecipeGuru
+          </button>
+          <div className="topbar-actions">
+            <button className="ghost" onClick={goHome}>
+              Week {weekly.length}
+            </button>
+            <button className="ghost" onClick={() => setGroceryOpen(true)}>
+              Grocery {groceryCount}
+            </button>
+            {view === "recipe" && recipe ? (
+              <button className="ghost" onClick={() => openCook(0)}>
+                Cook mode
+              </button>
+            ) : null}
+          </div>
+        </header>
+      )}
 
       {view === "home" && (
-        <main className="hero">
-          <p className="eyebrow">Skip the blog. Keep the recipe.</p>
-          <h1>
-            Paste a URL.
-            <em> Cook the actual recipe.</em>
-          </h1>
-          <p className="lede">
-            Paste a recipe-blog URL, a Facebook / TikTok / Instagram Reel link,
-            or the caption text itself — we pull out ingredients and steps.
+        <main className="mx-auto max-w-[1180px] px-5 pb-28 pt-12 md:px-10 md:pt-16">
+          <p className="text-[0.7rem] font-medium tracking-[0.22em] uppercase text-terracotta">
+            Skip the blog. Keep the recipe.
           </p>
-          <div className="composer">
-            <div className="mode-switch" role="tablist" aria-label="Paste type">
+          <h1 className="mt-3 max-w-3xl font-display text-[clamp(2.6rem,7vw,5.2rem)] leading-[0.95] tracking-tight text-espresso">
+            Paste a URL.
+            <em className="mt-1 block italic text-olive">Cook the actual recipe.</em>
+          </h1>
+          <p className="mt-5 max-w-xl text-[1.05rem] leading-relaxed text-olive/80">
+            Clip a recipe-blog URL, a Reel, or the caption itself. Ingredients and
+            steps land on the shelf below — ready to cook.
+          </p>
+          <div className="mt-8 max-w-2xl rounded-3xl border border-olive/15 bg-oatmeal p-3">
+            <div className="mb-3 grid grid-cols-2 gap-1 rounded-full bg-ivory p-1" role="tablist" aria-label="Paste type">
               <button
                 type="button"
-                className={`mode-switch-btn${inputMode === "url" ? " is-on" : ""}`}
+                className={`rounded-full px-4 py-2 text-sm ${
+                  inputMode === "url" ? "bg-olive text-ivory" : "bg-transparent text-olive"
+                }`}
                 onClick={() => setInputMode("url")}
               >
                 URL
               </button>
               <button
                 type="button"
-                className={`mode-switch-btn${inputMode === "caption" ? " is-on" : ""}`}
+                className={`rounded-full px-4 py-2 text-sm ${
+                  inputMode === "caption" ? "bg-olive text-ivory" : "bg-transparent text-olive"
+                }`}
                 onClick={() => setInputMode("caption")}
               >
                 Caption text
               </button>
             </div>
-          {inputMode === "url" ? (
-            <UrlForm
-              url={url}
-              loading={loading}
-              error={error}
-              onChange={setUrl}
-              onClear={() => {
-                setUrl("");
-                setError(null);
-              }}
-              onSubmit={() => extract()}
-            />
-          ) : (
-            <form
-              className="url-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void extractCaption();
-              }}
-            >
-              <textarea
-                value={captionText}
-                onChange={(event) => setCaptionText(event.target.value)}
-                placeholder={"Ingredients:\n1 cup flour\n...\n\nInstructions:\n1. Mix..."}
-                rows={8}
-                disabled={loading}
+            {inputMode === "url" ? (
+              <UrlForm
+                url={url}
+                loading={loading}
+                error={error}
+                onChange={setUrl}
+                onClear={() => {
+                  setUrl("");
+                  setError(null);
+                }}
+                onSubmit={() => extract()}
               />
-              <div className="url-form-actions">
-                <button
-                  type="button"
-                  className="ghost"
-                  disabled={loading || !captionText}
-                  onClick={() => {
-                    setCaptionText("");
-                    setError(null);
-                  }}
-                >
-                  Clear
-                </button>
-                <button type="submit" disabled={loading}>
-                  {loading ? "Extracting…" : "Extract"}
-                </button>
-              </div>
-              {error && <p className="form-error">{error}</p>}
-            </form>
-          )}
-          </div>
-          <div className="examples">
-            <span>Try one</span>
-            {EXAMPLES.map((example) => (
-              <button
-                key={example.url}
-                className="chip"
-                disabled={loading}
-                onClick={() => {
-                  setInputMode("url");
-                  setUrl(example.url);
-                  void extract(example.url);
+            ) : (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void extractCaption();
                 }}
               >
-                {example.label}
-              </button>
-            ))}
+                <textarea
+                  value={captionText}
+                  onChange={(event) => setCaptionText(event.target.value)}
+                  placeholder={"Ingredients:\n1 cup flour\n...\n\nInstructions:\n1. Mix..."}
+                  rows={8}
+                  disabled={loading}
+                  className="w-full resize-y rounded-2xl border-0 bg-ivory px-4 py-3 text-ink outline-none placeholder:text-olive/35"
+                />
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={loading || !captionText}
+                    onClick={() => {
+                      setCaptionText("");
+                      setError(null);
+                    }}
+                    className="rounded-full border-0 bg-transparent px-4 py-2 text-sm text-olive disabled:opacity-40"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="rounded-full bg-terracotta px-5 py-2 text-sm text-ivory disabled:opacity-40"
+                  >
+                    {loading ? "Extracting…" : "Clip recipe"}
+                  </button>
+                </div>
+                {error ? <p className="px-2 pb-2 text-sm text-terracotta">{error}</p> : null}
+              </form>
+            )}
           </div>
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-olive/70">
+            Reels often block a direct clip. If that happens, switch to Caption text and
+            paste the ingredients and steps. On the phone app, recipes stay on the device.
+          </p>
+          <button
+            type="button"
+            className="mt-3 rounded-full border border-olive/20 bg-transparent px-4 py-2 text-sm text-olive"
+            onClick={() => {
+              setError(null);
+              setRecipe(SAMPLE_RECIPE);
+              setUrl(SAMPLE_RECIPE.sourceUrl);
+              setCheckedIngredients(new Set());
+              setDoneSteps(new Set());
+              setCookIndex(0);
+              setView("recipe");
+            }}
+          >
+            Try a sample recipe
+          </button>
+          <div className="mt-4 flex max-w-md flex-wrap items-center gap-2">
+            <input
+              value={householdKey}
+              onChange={(event) => {
+                setHouseholdKey(event.target.value);
+                setHouseholdSaved(false);
+              }}
+              placeholder="Household unlock code"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="min-w-[12rem] flex-1 rounded-full border border-olive/15 bg-ivory px-4 py-2 text-sm text-ink outline-none"
+            />
+            <button
+              type="button"
+              className="rounded-full border border-olive/20 bg-transparent px-4 py-2 text-sm text-olive"
+              onClick={() => {
+                const value = householdKey.trim();
+                try {
+                  if (value) localStorage.setItem(HOUSEHOLD_KEY_STORAGE, value);
+                  else localStorage.removeItem(HOUSEHOLD_KEY_STORAGE);
+                  setHouseholdKey(value);
+                  setHouseholdSaved(true);
+                } catch {
+                  setError("Could not save the unlock code in this browser.");
+                }
+              }}
+            >
+              {householdSaved
+                ? householdKey.trim()
+                  ? "Unlimited clips on"
+                  : "Unlock cleared"
+                : "Save unlock"}
+            </button>
+          </div>
+          <WeeklyMenu
+            meals={weekly}
+            recipes={savedRecipes}
+            busy={libraryBusy}
+            onAddCustom={(input) => void handleAddWeeklyCustom(input)}
+            onAddRecipe={(recipe) => void handleAddWeeklyRecipe(recipe)}
+            onRemove={(meal) => void handleRemoveWeekly(meal)}
+            onToggle={(meal, checked) => void handleToggleWeekly(meal, checked)}
+            onOpen={openSaved}
+            onClear={() => void handleClearWeekly()}
+          />
           <SavedLibrary
             recipes={savedRecipes}
             filter={libraryFilter}
             query={libraryQuery}
+            weekRecipeIds={weekRecipeIds}
             onQuery={setLibraryQuery}
             onFilter={setLibraryFilter}
             onOpen={openSaved}
             onFavorite={(item) => void handleFavorite(item)}
+            onWeek={(item) => void handleAddWeeklyRecipe(item)}
+            onShop={(item) => void handleShopRecipe(item)}
+            onDelete={(item) => void handleRemove(item)}
           />
         </main>
       )}
@@ -574,13 +844,21 @@ export default function App() {
             if (savedMatch) void handleRemove(savedMatch);
           }}
           onGrocery={() => void handleAddGrocery()}
+          onWeekly={() => void handleWeeklyFromRecipe()}
+          weeklyOn={Boolean(savedMatch && weekRecipeIds.has(savedMatch.id))}
           onShare={() => void shareRecipe()}
           onPrint={() => window.print()}
           onStartTimer={timers.startTimer}
         />
       )}
 
-      {loading && <LoadingScrim />}
+      {loading && (
+        <LoadingScrim
+          hint={
+            isSocialUrl(url) ? EXTRACT_WAIT_HINT : "Reading the page and cutting the filler…"
+          }
+        />
+      )}
 
       {cookOpen && recipe && (
         <CookMode
@@ -642,8 +920,18 @@ export default function App() {
           onClearAll={async () => {
             setGrocery(await clearAllGrocery());
           }}
+          onAdd={handleAddGroceryLine}
         />
       )}
+
+      {removedRecipe ? (
+        <div className="undo-toast" role="status">
+          <span>Deleted “{removedRecipe.title}”.</span>
+          <button type="button" onClick={() => void handleUndoRemove()}>
+            Undo
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -665,7 +953,6 @@ function UrlForm({
 }) {
   return (
     <form
-      className="url-form"
       onSubmit={(event) => {
         event.preventDefault();
         onSubmit();
@@ -684,21 +971,26 @@ function UrlForm({
         autoCorrect="off"
         spellCheck={false}
         disabled={loading}
+        className="w-full rounded-2xl border-0 bg-ivory px-4 py-3 text-ink outline-none placeholder:text-olive/35"
       />
-      <div className="url-form-actions">
+      <div className="mt-3 flex justify-end gap-2">
         <button
           type="button"
-          className="ghost"
           disabled={loading || !url}
           onClick={onClear}
+          className="rounded-full border-0 bg-transparent px-4 py-2 text-sm text-olive disabled:opacity-40"
         >
           Clear
         </button>
-        <button type="submit" disabled={loading}>
-          {loading ? "Extracting…" : "Extract"}
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded-full bg-terracotta px-5 py-2 text-sm text-ivory disabled:opacity-40"
+        >
+          {loading ? "Extracting…" : "Clip recipe"}
         </button>
       </div>
-      {error && <p className="form-error">{error}</p>}
+      {error ? <p className="px-2 pb-2 text-sm text-terracotta">{error}</p> : null}
     </form>
   );
 }
@@ -741,6 +1033,8 @@ function RecipeView({
   onFavorite,
   onRemove,
   onGrocery,
+  onWeekly,
+  weeklyOn,
   onShare,
   onPrint,
   onStartTimer,
@@ -782,6 +1076,8 @@ function RecipeView({
   onFavorite: () => void;
   onRemove: () => void;
   onGrocery: () => void;
+  onWeekly: () => void;
+  weeklyOn: boolean;
   onShare: () => void;
   onPrint: () => void;
   onStartTimer: (match: { seconds: number; label: string; start: number; end: number }) => void;
@@ -862,6 +1158,9 @@ function RecipeView({
             <button className="ghost" onClick={onGrocery} disabled={busy}>
               Add to grocery
             </button>
+            <button className="ghost" onClick={onWeekly} disabled={busy}>
+              {weeklyOn ? "On this week" : "Add to this week"}
+            </button>
             <button className="ghost" onClick={onShare}>
               Share
             </button>
@@ -873,7 +1172,7 @@ function RecipeView({
             </button>
             {saved ? (
               <button className="ghost" onClick={onRemove} disabled={busy}>
-                Remove
+                Delete recipe
               </button>
             ) : null}
             <button className="ghost" onClick={onNew}>
@@ -1152,111 +1451,6 @@ function CookMode({
   );
 }
 
-function SavedLibrary({
-  recipes,
-  filter,
-  query,
-  onQuery,
-  onFilter,
-  onOpen,
-  onFavorite,
-}: {
-  recipes: SavedRecipe[];
-  filter: LibraryFilter;
-  query: string;
-  onQuery: (value: string) => void;
-  onFilter: (filter: LibraryFilter) => void;
-  onOpen: (recipe: SavedRecipe) => void;
-  onFavorite: (recipe: SavedRecipe) => void;
-}) {
-  const visible = recipes.filter((item) => {
-    if (filter === "favorites" && !item.favorite) return false;
-    if (filter !== "all" && filter !== "favorites" && !recipeMatchesCategory(item, filter)) {
-      return false;
-    }
-    return matchesQuery(item, query);
-  });
-
-  return (
-    <section className="library">
-      <div className="library-head">
-        <h2>Saved recipes</h2>
-        <div className="library-filters">
-          <button
-            className={`chip ${filter === "all" ? "is-on" : ""}`}
-            onClick={() => onFilter("all")}
-          >
-            All {recipes.length}
-          </button>
-          <button
-            className={`chip ${filter === "favorites" ? "is-on" : ""}`}
-            onClick={() => onFilter("favorites")}
-          >
-            Favorites {recipes.filter((item) => item.favorite).length}
-          </button>
-          {RECIPE_CATEGORIES.map((category) => (
-            <button
-              key={category}
-              className={`chip ${filter === category ? "is-on" : ""}`}
-              onClick={() => onFilter(category)}
-            >
-              {recipeCategoryLabel(category)}{" "}
-              {recipes.filter((item) => recipeMatchesCategory(item, category)).length}
-            </button>
-          ))}
-        </div>
-      </div>
-      <input
-        className="search"
-        value={query}
-        onChange={(event) => onQuery(event.target.value)}
-        placeholder="Search title, ingredient, tag, or note"
-      />
-      {recipes.length === 0 ? (
-        <p className="library-empty">
-          Extract a recipe, then tap Save. Favorites live here too.
-        </p>
-      ) : visible.length === 0 ? (
-        <p className="library-empty">No recipes match that search.</p>
-      ) : (
-        <ul className="library-grid">
-          {visible.map((item) => (
-            <li key={item.id}>
-              <article className="library-card">
-                <button className="library-open" onClick={() => onOpen(item)}>
-                  {item.image ? (
-                    <img src={item.image} alt="" referrerPolicy="no-referrer" />
-                  ) : (
-                    <span className="library-placeholder">R</span>
-                  )}
-                  <span>
-                    <strong>{item.title}</strong>
-                    <em>
-                      {item.sourceName ?? "Saved recipe"}
-                      {item.favorite ? " · Favorite" : ""}
-                      {item.categories.length
-                        ? ` · ${item.categories.map(recipeCategoryLabel).join(", ")}`
-                        : ""}
-                      {item.tags.length ? ` · ${item.tags.join(", ")}` : ""}
-                    </em>
-                  </span>
-                </button>
-                <button
-                  className={`star-btn ${item.favorite ? "is-on" : ""}`}
-                  onClick={() => onFavorite(item)}
-                  title={item.favorite ? "Remove favorite" : "Favorite"}
-                >
-                  {item.favorite ? "★" : "☆"}
-                </button>
-              </article>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 function GroceryPanel({
   items,
   categoryOrder,
@@ -1268,6 +1462,7 @@ function GroceryPanel({
   onCheckAll,
   onClear,
   onClearAll,
+  onAdd,
 }: {
   items: GroceryItem[];
   categoryOrder: GroceryCategory[];
@@ -1283,7 +1478,9 @@ function GroceryPanel({
   onCheckAll: () => void;
   onClear: () => void;
   onClearAll: () => void;
+  onAdd: (line: string) => Promise<void> | void;
 }) {
+  const [draft, setDraft] = useState("");
   const groups = groupGroceryItems(items, categoryOrder);
   const visible = groups.map((group) => group.category);
   const allChecked = items.length > 0 && items.every((item) => item.checked);
@@ -1296,6 +1493,28 @@ function GroceryPanel({
             Close
           </button>
         </div>
+        <form
+          className="grocery-add"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const line = draft.trim();
+            if (!line) return;
+            void Promise.resolve(onAdd(line)).then(() => setDraft(""));
+          }}
+        >
+          <label className="sr-only" htmlFor="grocery-item">
+            Add a grocery item
+          </label>
+          <input
+            id="grocery-item"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Milk, 2 limes, olive oil…"
+          />
+          <button type="submit" className="ghost" disabled={!draft.trim()}>
+            Add
+          </button>
+        </form>
         <details className="grocery-arrange">
           <summary>Arrange aisles</summary>
           <ol>
@@ -1326,7 +1545,7 @@ function GroceryPanel({
         </details>
         {items.length === 0 ? (
           <p className="library-empty">
-            Open a recipe and tap Add to grocery for unchecked ingredients.
+            Add items above, or open a recipe and tap Add to grocery.
           </p>
         ) : (
           <div className="grocery-list">
@@ -1416,12 +1635,12 @@ function GroceryPanel({
   );
 }
 
-function LoadingScrim() {
+function LoadingScrim({ hint }: { hint: string }) {
   return (
     <div className="loading" role="status" aria-live="polite">
       <div className="loading-card">
         <span className="pulse" />
-        <p>Reading the page and cutting the filler…</p>
+        <p>{hint}</p>
       </div>
     </div>
   );

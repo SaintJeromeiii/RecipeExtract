@@ -4,9 +4,14 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import { ShareIntentProvider, useShareIntentContext } from "expo-share-intent";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  AppState,
   BackHandler,
   Image,
   Modal,
@@ -20,7 +25,10 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { firstHttpUrl, isSocialUrl } from "../shared/social";
+import { EXTRACT_WAIT_HINT, SAMPLE_RECIPE } from "../shared/recipeQuality";
 import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingredients";
+import { parseShopLines, sortWeeklyMeals } from "../shared/weekly";
 import {
   groceryCategoryLabel,
   groupGroceryItems,
@@ -38,14 +46,22 @@ import { recipeAsHtml, recipeAsText } from "../shared/share-text";
 import { findTimers } from "../shared/timers";
 import {
   addGrocery,
+  addWeeklyMeal,
   clearAllGrocery,
   clearCheckedGrocery,
+  clearWeeklyMeals,
   extractRecipe,
   extractRecipeFromCaption,
+  exportKitchen,
+  importKitchen,
+  loadHouseholdKey,
+  saveHouseholdKey,
   listGrocery,
   listSavedRecipes,
+  listWeeklyMeals,
   removeGrocery,
   removeSavedRecipe,
+  removeWeeklyMeal,
   saveRecipe,
   setAllGroceryChecked,
   setGroceryCategoryOrder,
@@ -53,8 +69,10 @@ import {
   setGroceryItemChecked,
   setRecipeFavorite,
   updateSavedRecipe,
+  updateWeeklyMeal,
 } from "./src/api";
 import { useCookTimers } from "./src/kitchen";
+import { ErrorBoundary } from "./src/ErrorBoundary";
 import type {
   GroceryCategory,
   GroceryItem,
@@ -62,15 +80,10 @@ import type {
   RecipeCategory,
   SavedRecipe,
   TimerMatch,
+  WeeklyMeal,
 } from "./src/types";
 
 type LibraryFilter = "all" | "favorites" | RecipeCategory;
-
-const EXAMPLES = [
-  { label: "Lentil soup", url: "https://cookieandkate.com/best-lentil-soup-recipe/" },
-  { label: "Banana bread", url: "https://www.loveandlemons.com/banana-bread/" },
-  { label: "Vegan paella", url: "https://minimalistbaker.com/easy-vegan-paella/" },
-];
 
 function recipeKey(recipe: Pick<Recipe, "sourceUrl">): string {
   return recipe.sourceUrl.replace(/\/$/, "");
@@ -86,16 +99,28 @@ function urlFromLink(link: string): string | null {
   } catch {
     // Fall through.
   }
-  const match = link.match(/https?:\/\/\S+/);
-  return match ? match[0] : null;
+  return firstHttpUrl(link);
 }
+
+const ONBOARD_KEY = "recipeextract.onboarded.v1";
+const extraUrls = Constants.expoConfig?.extra as
+  | { privacyUrl?: string; testersUrl?: string }
+  | undefined;
+const PRIVACY_URL =
+  extraUrls?.privacyUrl || "https://recipeextract-production.up.railway.app/privacy.html";
+const TESTERS_URL =
+  extraUrls?.testersUrl || "https://recipeextract-production.up.railway.app/testers.html";
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <StatusBar style="light" />
-      <AppInner />
-    </SafeAreaProvider>
+    <ShareIntentProvider>
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <ErrorBoundary>
+          <AppInner />
+        </ErrorBoundary>
+      </SafeAreaProvider>
+    </ShareIntentProvider>
   );
 }
 
@@ -117,6 +142,9 @@ function AppInner() {
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryBusy, setLibraryBusy] = useState(false);
+  const [weekly, setWeekly] = useState<WeeklyMeal[]>([]);
+  const [weeklyTitle, setWeeklyTitle] = useState("");
+  const [weeklyShop, setWeeklyShop] = useState("");
   const [grocery, setGrocery] = useState<GroceryItem[]>([]);
   const [categoryOrder, setCategoryOrder] = useState<GroceryCategory[]>(() =>
     resolveCategoryOrder(),
@@ -137,7 +165,15 @@ function AppInner() {
   const [draftSteps, setDraftSteps] = useState("");
   const [draftNotes, setDraftNotes] = useState("");
   const [draftTag, setDraftTag] = useState("");
+  const [groceryDraft, setGroceryDraft] = useState("");
+  const [removedRecipe, setRemovedRecipe] = useState<SavedRecipe | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [loadingHint, setLoadingHint] = useState("Reading the page and cutting the filler…");
+  const [householdKey, setHouseholdKey] = useState("");
+  const [householdSaved, setHouseholdSaved] = useState(false);
   const timers = useCookTimers();
+  const offeredClipboard = useRef("");
+  const { shareIntent, resetShareIntent } = useShareIntentContext();
 
   const savedMatch = useMemo(() => {
     if (!recipe) return null;
@@ -152,6 +188,8 @@ function AppInner() {
 
   useEffect(() => {
     void listSavedRecipes().then(setSavedRecipes).catch(() => {});
+    void listWeeklyMeals().then(setWeekly).catch(() => {});
+    void loadHouseholdKey().then(setHouseholdKey).catch(() => {});
     void listGrocery()
       .then(({ items, categoryOrder: order }) => {
         setGrocery(items);
@@ -159,6 +197,12 @@ function AppInner() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!removedRecipe) return;
+    const timer = setTimeout(() => setRemovedRecipe(null), 8000);
+    return () => clearTimeout(timer);
+  }, [removedRecipe?.id]);
 
   useEffect(() => {
     if (cookOpen) void activateKeepAwakeAsync("cook");
@@ -170,6 +214,10 @@ function AppInner() {
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (helpOpen) {
+        setHelpOpen(false);
+        return true;
+      }
       if (cookOpen) {
         setCookOpen(false);
         return true;
@@ -190,7 +238,7 @@ function AppInner() {
       return false;
     });
     return () => sub.remove();
-  }, [assigningItem, cookOpen, groceryOpen, view]);
+  }, [assigningItem, cookOpen, groceryOpen, helpOpen, view]);
 
   async function extract(nextUrl = url) {
     const trimmed = nextUrl.trim();
@@ -198,12 +246,18 @@ function AppInner() {
       setError("Paste a recipe URL to get started.");
       return;
     }
-    setUrl(trimmed);
+    const extracted = firstHttpUrl(trimmed) || trimmed;
+    setUrl(extracted);
     setLoading(true);
+    setLoadingHint(
+      isSocialUrl(extracted)
+        ? EXTRACT_WAIT_HINT
+        : "Reading the page and cutting the filler…",
+    );
     setError(null);
     setCookOpen(false);
     try {
-      const data = await extractRecipe(trimmed);
+      const data = await extractRecipe(extracted);
       setRecipe(data);
       setCheckedIngredients(new Set());
       setDoneSteps(new Set());
@@ -212,6 +266,7 @@ function AppInner() {
     } catch (err) {
       setRecipe(null);
       setView("home");
+      setInputMode("caption");
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
@@ -226,6 +281,7 @@ function AppInner() {
     }
     setCaptionText(trimmed);
     setLoading(true);
+    setLoadingHint("Turning that caption into a recipe…");
     setError(null);
     setCookOpen(false);
     try {
@@ -238,6 +294,7 @@ function AppInner() {
     } catch (err) {
       setRecipe(null);
       setView("home");
+      setInputMode("caption");
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
@@ -254,6 +311,42 @@ function AppInner() {
       if (link) consume(link);
     });
     return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    const text = `${shareIntent?.webUrl ?? ""} ${shareIntent?.text ?? ""}`.trim();
+    const next = urlFromLink(text) || firstHttpUrl(text);
+    if (!next) return;
+    resetShareIntent();
+    void extract(next);
+  }, [shareIntent]);
+
+  useEffect(() => {
+    void AsyncStorage.getItem(ONBOARD_KEY).then((value) => {
+      if (!value) setHelpOpen(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    async function maybeUseClipboard() {
+      if (loading) return;
+      const text = (await Clipboard.getStringAsync()).trim();
+      const next = urlFromLink(text) || firstHttpUrl(text);
+      if (!next || next === offeredClipboard.current) return;
+      offeredClipboard.current = next;
+      Alert.alert("Use the recipe link on your clipboard?", next, [
+        { text: "Not now", style: "cancel" },
+        { text: "Extract", onPress: () => void extract(next) },
+      ]);
+    }
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void maybeUseClipboard();
+    });
+    const timer = setTimeout(() => void maybeUseClipboard(), 900);
+    return () => {
+      sub.remove();
+      clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -331,6 +424,174 @@ function AppInner() {
     setGroceryOpen(true);
   }
 
+  function upsertWeekly(meal: WeeklyMeal) {
+    setWeekly((current) =>
+      current.some((item) => item.id === meal.id)
+        ? current.map((item) => (item.id === meal.id ? meal : item))
+        : [...current, meal],
+    );
+  }
+
+  async function handleAddWeeklyRecipe(target: SavedRecipe) {
+    setError(null);
+    const result = await addWeeklyMeal({ recipeId: target.id });
+    upsertWeekly(result.meal);
+    setGrocery(result.grocery);
+  }
+
+  async function handleAddWeeklyCustom() {
+    const trimmed = weeklyTitle.trim();
+    if (!trimmed) return;
+    setError(null);
+    const result = await addWeeklyMeal({
+      title: trimmed,
+      ingredients: parseShopLines(weeklyShop),
+    });
+    upsertWeekly(result.meal);
+    setGrocery(result.grocery);
+    setWeeklyTitle("");
+    setWeeklyShop("");
+  }
+
+  async function handleWeeklyFromRecipe() {
+    if (!recipe) return;
+    const saved = savedMatch ?? (await saveRecipe(recipe));
+    if (!savedMatch) upsertSaved(saved);
+    await handleAddWeeklyRecipe(saved);
+  }
+
+  async function handleRemoveWeekly(meal: WeeklyMeal) {
+    await removeWeeklyMeal(meal.id);
+    setWeekly((current) => current.filter((item) => item.id !== meal.id));
+  }
+
+  async function handleToggleWeekly(meal: WeeklyMeal, checked: boolean) {
+    upsertWeekly(await updateWeeklyMeal(meal.id, { checked }));
+  }
+
+  const weekRecipeIds = useMemo(
+    () => new Set(weekly.map((meal) => meal.recipeId).filter((id): id is string => Boolean(id))),
+    [weekly],
+  );
+
+  async function handleShopRecipe(target: SavedRecipe) {
+    if (!target.ingredients.length) {
+      setError("That recipe has no ingredients to shop.");
+      return;
+    }
+    setError(null);
+    setGrocery(
+      await addGrocery({
+        ingredients: target.ingredients,
+        recipeId: target.id,
+        recipeTitle: target.title,
+      }),
+    );
+    setGroceryOpen(true);
+  }
+
+  async function handleAddGroceryLine() {
+    const trimmed = groceryDraft.trim();
+    if (!trimmed) return;
+    setGrocery(await addGrocery({ ingredients: [trimmed] }));
+    setGroceryDraft("");
+  }
+
+  async function openSample() {
+    setError(null);
+    setRecipe(SAMPLE_RECIPE);
+    setUrl(SAMPLE_RECIPE.sourceUrl);
+    setCheckedIngredients(new Set());
+    setDoneSteps(new Set());
+    setCookIndex(0);
+    setView("recipe");
+  }
+
+  async function handleExportKitchen() {
+    try {
+      const json = await exportKitchen();
+      await Share.share({
+        title: "RecipeGuru backup",
+        message: json,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not export recipes.");
+    }
+  }
+
+  async function handleImportKitchen() {
+    try {
+      const raw = (await Clipboard.getStringAsync()).trim();
+      if (!raw.startsWith("{")) {
+        Alert.alert(
+          "No backup on the clipboard",
+          "Copy a RecipeGuru backup JSON, then tap Restore backup again.",
+        );
+        return;
+      }
+      const result = await importKitchen(raw);
+      setSavedRecipes(await listSavedRecipes());
+      setWeekly(await listWeeklyMeals());
+      const groceryState = await listGrocery();
+      setGrocery(groceryState.items);
+      setCategoryOrder(groceryState.categoryOrder);
+      Alert.alert(
+        "Backup restored",
+        `Merged recipes from the clipboard. Library now has your previous saves plus the backup (${result.recipes} recipes in the file).`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not restore that backup.");
+    }
+  }
+
+  function handleReport() {
+    void Share.share({
+      title: "RecipeGuru problem",
+      message: [
+        "RecipeGuru test report",
+        url ? `URL: ${url}` : "",
+        error ? `Error: ${error}` : "",
+        "What happened:",
+        "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+  }
+
+  function dismissHelp() {
+    setHelpOpen(false);
+    void AsyncStorage.setItem(ONBOARD_KEY, "1");
+  }
+
+  function handleRemove(saved: SavedRecipe) {
+    Alert.alert("Delete recipe", `Delete “${saved.title}” from your collection?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            await removeSavedRecipe(saved.id);
+            setSavedRecipes((current) => current.filter((item) => item.id !== saved.id));
+            setRemovedRecipe(saved);
+            if (recipe && recipeKey(recipe) === recipeKey(saved)) {
+              setView("home");
+              setRecipe(null);
+              setCookOpen(false);
+            }
+          })();
+        },
+      },
+    ]);
+  }
+
+  async function handleUndoRemove() {
+    if (!removedRecipe) return;
+    upsertSaved(await saveRecipe(removedRecipe));
+    setRemovedRecipe(null);
+  }
+
   async function printRecipe() {
     if (!recipe) return;
     const file = await Print.printToFileAsync({ html: recipeAsHtml(recipe) });
@@ -357,16 +618,27 @@ function AppInner() {
             setError(null);
           }}
         >
-          <View style={styles.brandMark}>
-            <Text style={styles.brandMarkText}>R</Text>
-          </View>
+          <Image source={require("./assets/owl-logo.png")} style={styles.brandMark} />
           <Text style={styles.brandText}>RecipeGuru</Text>
         </Pressable>
         <View style={styles.topActions}>
+          <Pressable
+            style={styles.ghost}
+            onPress={() => {
+              setView("home");
+              setCookOpen(false);
+              setError(null);
+            }}
+          >
+            <Text style={styles.ghostText}>Week {weekly.length}</Text>
+          </Pressable>
           <Pressable style={styles.ghost} onPress={() => setGroceryOpen(true)}>
             <Text style={styles.ghostText}>
               Grocery {grocery.filter((item) => !item.checked).length}
             </Text>
+          </Pressable>
+          <Pressable style={styles.ghost} onPress={() => setHelpOpen(true)}>
+            <Text style={styles.ghostText}>Help</Text>
           </Pressable>
         </View>
       </View>
@@ -459,25 +731,89 @@ function AppInner() {
           </View>
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Text style={styles.sectionLabel}>Try one</Text>
-          <View style={styles.chips}>
-            {EXAMPLES.map((example) => (
-              <Pressable
-                key={example.url}
-                style={styles.chip}
-                onPress={() => void extract(example.url)}
-              >
-                <Text style={styles.chipText}>{example.label}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <Text style={styles.libraryMeta}>
+            Reels often block a direct clip. If Extract fails, switch to Caption text and
+            paste the ingredients and steps. You can also share a link into RecipeGuru.
+          </Text>
+          <Pressable style={styles.ghost} onPress={() => void openSample()}>
+            <Text style={styles.ghostText}>Try a sample recipe</Text>
+          </Pressable>
+          <Text style={styles.sectionTitle}>Weekly meals</Text>
+          <Text style={styles.libraryMeta}>
+            Add a clipped recipe or an easy meal. It goes on the grocery list too.
+          </Text>
+          <Text style={styles.libraryMeta}>Easy meal</Text>
+          <TextInput
+            style={styles.search}
+            value={weeklyTitle}
+            onChangeText={setWeeklyTitle}
+            onSubmitEditing={() => void handleAddWeeklyCustom()}
+          />
+          <Text style={[styles.libraryMeta, { marginTop: 8 }]}>Need from the store</Text>
+          <TextInput
+            style={styles.search}
+            value={weeklyShop}
+            onChangeText={setWeeklyShop}
+          />
+          <Pressable
+            style={[styles.primary, !weeklyTitle.trim() && styles.disabled]}
+            disabled={!weeklyTitle.trim()}
+            onPress={() => void handleAddWeeklyCustom()}
+          >
+            <Text style={styles.primaryText}>Add meal</Text>
+          </Pressable>
+          {weekly.length === 0 ? (
+            <Text style={styles.libraryMeta}>Nothing planned yet.</Text>
+          ) : (
+            sortWeeklyMeals(weekly).map((meal) => {
+              const linked = meal.recipeId
+                ? savedRecipes.find((item) => item.id === meal.recipeId)
+                : undefined;
+              return (
+                <View key={meal.id} style={styles.weeklyRow}>
+                  <Pressable onPress={() => void handleToggleWeekly(meal, !meal.checked)}>
+                    <Check checked={meal.checked} />
+                  </Pressable>
+                  <Pressable
+                    style={{ flex: 1 }}
+                    onPress={() => {
+                      if (!linked) {
+                        void handleToggleWeekly(meal, !meal.checked);
+                        return;
+                      }
+                      setRecipe(linked);
+                      setUrl(linked.sourceUrl);
+                      setCheckedIngredients(new Set());
+                      setDoneSteps(new Set());
+                      setView("recipe");
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.libraryName,
+                        meal.checked ? { textDecorationLine: "line-through", opacity: 0.55 } : null,
+                      ]}
+                    >
+                      {meal.title}
+                    </Text>
+                  </Pressable>
+                  <Pressable onPress={() => void handleRemoveWeekly(meal)}>
+                    <Text style={styles.groceryRemove}>Remove</Text>
+                  </Pressable>
+                </View>
+              );
+            })
+          )}
+          {weekly.length ? (
+            <Pressable style={styles.ghost} onPress={() => void clearWeeklyMeals().then(setWeekly)}>
+              <Text style={styles.ghostText}>Clear week</Text>
+            </Pressable>
+          ) : null}
           <Text style={styles.sectionTitle}>Saved recipes</Text>
           <TextInput
             style={styles.search}
             value={libraryQuery}
             onChangeText={setLibraryQuery}
-            placeholder="Search saved recipes"
-            placeholderTextColor="#7f8e89"
           />
           <View style={styles.chips}>
             <Pressable
@@ -516,6 +852,7 @@ function AppInner() {
             .filter((item) => matchesQuery(item, libraryQuery))
             .map((item) => (
               <View key={item.id} style={styles.libraryCard}>
+                <View style={styles.libraryCardRow}>
                 <Pressable
                   style={styles.libraryOpen}
                   onPress={() => {
@@ -547,6 +884,20 @@ function AppInner() {
                 <Pressable onPress={() => void handleFavorite(item)}>
                   <Text style={styles.chipText}>{item.favorite ? "★" : "☆"}</Text>
                 </Pressable>
+                </View>
+                <View style={styles.libraryActions}>
+                  <Pressable style={styles.ghost} onPress={() => void handleAddWeeklyRecipe(item)}>
+                    <Text style={styles.ghostText}>
+                      {weekRecipeIds.has(item.id) ? "On week" : "Week"}
+                    </Text>
+                  </Pressable>
+                  <Pressable style={styles.ghost} onPress={() => void handleShopRecipe(item)}>
+                    <Text style={styles.ghostText}>Shop</Text>
+                  </Pressable>
+                  <Pressable style={styles.ghost} onPress={() => handleRemove(item)}>
+                    <Text style={styles.ghostText}>Delete</Text>
+                  </Pressable>
+                </View>
               </View>
             ))}
         </ScrollView>
@@ -597,6 +948,16 @@ function AppInner() {
             <Pressable style={styles.ghost} onPress={() => void handleAddGrocery()}>
               <Text style={styles.ghostText}>Grocery</Text>
             </Pressable>
+            <Pressable style={styles.ghost} onPress={() => void handleWeeklyFromRecipe()}>
+              <Text style={styles.ghostText}>
+                {savedMatch && weekRecipeIds.has(savedMatch.id) ? "On this week" : "This week"}
+              </Text>
+            </Pressable>
+            {savedMatch ? (
+              <Pressable style={styles.ghost} onPress={() => handleRemove(savedMatch)}>
+                <Text style={styles.ghostText}>Delete</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               style={styles.ghost}
               onPress={() =>
@@ -766,7 +1127,7 @@ function AppInner() {
         <View style={styles.loading}>
           <View style={styles.loadingCard}>
             <ActivityIndicator color="#ff5a3c" />
-            <Text style={styles.loadingText}>Reading the page and cutting the filler…</Text>
+            <Text style={styles.loadingText}>{loadingHint}</Text>
           </View>
         </View>
       ) : null}
@@ -793,6 +1154,91 @@ function AppInner() {
       />
 
       <Modal
+        visible={helpOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={dismissHelp}
+      >
+        <SafeAreaView style={styles.groceryWrap} edges={["bottom", "left", "right"]}>
+          <View style={styles.groceryCard}>
+            <Text style={styles.panelTitle}>How to test RecipeGuru</Text>
+            <Text style={styles.groceryHint}>
+              1. Try the sample recipe, then Save, This week, Grocery, and Cook.
+            </Text>
+            <Text style={styles.groceryHint}>
+              2. Paste a public recipe blog URL and tap Extract.
+            </Text>
+            <Text style={styles.groceryHint}>
+              3. For TikTok or Instagram, paste the URL. If it fails, copy the caption
+              and use Caption text.
+            </Text>
+            <Text style={styles.groceryHint}>
+              4. Recipes stay on this phone. Export a backup before you uninstall.
+            </Text>
+            <Pressable style={styles.primary} onPress={() => void openSample()}>
+              <Text style={styles.primaryText}>Try a sample recipe</Text>
+            </Pressable>
+            <Pressable style={styles.groceryGhost} onPress={() => void handleExportKitchen()}>
+              <Text style={styles.groceryGhostText}>Export backup</Text>
+            </Pressable>
+            <Pressable style={styles.groceryGhost} onPress={() => void handleImportKitchen()}>
+              <Text style={styles.groceryGhostText}>Restore backup from clipboard</Text>
+            </Pressable>
+            <Pressable style={styles.groceryGhost} onPress={handleReport}>
+              <Text style={styles.groceryGhostText}>Report a problem</Text>
+            </Pressable>
+            <Pressable
+              style={styles.groceryGhost}
+              onPress={() => void Linking.openURL(PRIVACY_URL)}
+            >
+              <Text style={styles.groceryGhostText}>Privacy policy</Text>
+            </Pressable>
+            <Pressable
+              style={styles.groceryGhost}
+              onPress={() => void Linking.openURL(TESTERS_URL)}
+            >
+              <Text style={styles.groceryGhostText}>Tester notes</Text>
+            </Pressable>
+            <Text style={styles.groceryHint}>
+              Household unlock — you and your partner. Testers stay on the clip limit.
+            </Text>
+            <TextInput
+              style={styles.groceryAddInput}
+              value={householdKey}
+              onChangeText={(value) => {
+                setHouseholdKey(value);
+                setHouseholdSaved(false);
+              }}
+              placeholder="Unlock code"
+              placeholderTextColor="#8a7b6b"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Pressable
+              style={styles.groceryGhost}
+              onPress={() => {
+                void saveHouseholdKey(householdKey).then((value) => {
+                  setHouseholdKey(value);
+                  setHouseholdSaved(true);
+                });
+              }}
+            >
+              <Text style={styles.groceryGhostText}>
+                {householdSaved
+                  ? householdKey.trim()
+                    ? "Unlimited clips on this phone"
+                    : "Unlock cleared"
+                  : "Save unlock"}
+              </Text>
+            </Pressable>
+            <Pressable style={styles.primary} onPress={dismissHelp}>
+              <Text style={styles.primaryText}>Got it</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
         visible={groceryOpen}
         animationType="slide"
         transparent
@@ -801,6 +1247,24 @@ function AppInner() {
         <SafeAreaView style={styles.groceryWrap} edges={["bottom", "left", "right"]}>
           <View style={styles.groceryCard}>
             <Text style={styles.panelTitle}>Grocery list</Text>
+            <View style={styles.groceryAdd}>
+              <TextInput
+                style={styles.groceryAddInput}
+                value={groceryDraft}
+                onChangeText={setGroceryDraft}
+                placeholder="Milk, 2 limes, olive oil…"
+                placeholderTextColor="#8a7b6b"
+                returnKeyType="done"
+                onSubmitEditing={() => void handleAddGroceryLine()}
+              />
+              <Pressable
+                style={[styles.ghost, !groceryDraft.trim() && styles.disabled]}
+                disabled={!groceryDraft.trim()}
+                onPress={() => void handleAddGroceryLine()}
+              >
+                <Text style={styles.ghostText}>Add</Text>
+              </Pressable>
+            </View>
             <ScrollView
               style={[styles.groceryList, { maxHeight: Math.round(windowHeight * 0.52) }]}
               contentContainerStyle={styles.groceryListContent}
@@ -845,7 +1309,7 @@ function AppInner() {
                 : null}
               {grocery.length === 0 ? (
                 <Text style={styles.libraryMeta}>
-                  Open a recipe and tap Add to grocery for unchecked ingredients.
+                  Add items above, or open a recipe and tap Grocery.
                 </Text>
               ) : (
                 <>
@@ -1031,6 +1495,17 @@ function AppInner() {
           </View>
         </Pressable>
       </Modal>
+
+      {removedRecipe ? (
+        <View style={styles.undoToast}>
+          <Text style={styles.undoToastText} numberOfLines={1}>
+            Deleted “{removedRecipe.title}”.
+          </Text>
+          <Pressable onPress={() => void handleUndoRemove()}>
+            <Text style={styles.undoToastAction}>Undo</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -1189,9 +1664,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: "#ff5a3c",
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: "#0E1519",
   },
   brandMarkText: { color: "#fff8f5", fontWeight: "800" },
   brandText: { color: "#f7f3eb", fontWeight: "700", fontSize: 17 },
@@ -1239,14 +1712,6 @@ const styles = StyleSheet.create({
   },
   ghostText: { color: "#f7f3eb", fontWeight: "600" },
   error: { color: "#ff9b8a" },
-  sectionLabel: {
-    color: "#9aa8a3",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 1.6,
-    textTransform: "uppercase",
-    marginTop: 8,
-  },
   sectionTitle: { color: "#f7f3eb", fontSize: 22, fontWeight: "700", marginTop: 10 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
@@ -1268,9 +1733,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: "#172126",
   },
-  libraryCard: {
+  weeklyRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
+    backgroundColor: "#172126",
+    borderColor: "rgba(247,243,235,0.1)",
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  libraryCard: {
     gap: 8,
     backgroundColor: "#172126",
     borderColor: "rgba(247,243,235,0.1)",
@@ -1278,6 +1752,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 8,
   },
+  libraryCardRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  libraryActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 4, paddingBottom: 2 },
   libraryOpen: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
   libraryImage: {
     width: 56,
@@ -1427,6 +1903,35 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   groceryRemove: { color: "#142018", fontWeight: "700", fontSize: 14 },
+  groceryAdd: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 10 },
+  groceryAddInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "rgba(20,32,24,0.14)",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#142018",
+    backgroundColor: "#fffaf2",
+  },
+  undoToast: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    backgroundColor: "#f4f0ea",
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "rgba(63,74,58,0.18)",
+  },
+  undoToastText: { flex: 1, color: "#1c3d5c" },
+  undoToastAction: { color: "#3f4a3a", fontWeight: "700" },
   groceryGhost: {
     flexGrow: 1,
     borderWidth: 1,

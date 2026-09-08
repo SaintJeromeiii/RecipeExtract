@@ -61,6 +61,31 @@ function hostName(url: string): string | null {
   }
 }
 
+/** TikTok captions are often one paragraph: "Ingredients: … Method: …". */
+export function expandCaptionForParse(caption: string): string {
+  return caption
+    .replace(/\r\n/g, "\n")
+    .replace(/\u2028|\u2029/g, "\n")
+    .replace(
+      /(?:^|[ \t])(?:[\p{Emoji_Presentation}\p{Extended_Pictographic}][\uFE0F\u200D]*)*\s*(ingredients?|what you(?:'|’)ll need|shopping list|you(?:'|’)ll need)\s*[:\-–]\s*/giu,
+      "\nIngredients:\n",
+    )
+    .replace(
+      /(?:^|[ \t])(?:[\p{Emoji_Presentation}\p{Extended_Pictographic}][\uFE0F\u200D]*)*\s*(instructions?|directions?|method|steps?|how to(?: make)?|prep(?:aration)?)\s*[:\-–]\s*/giu,
+      "\nInstructions:\n",
+    )
+    .replace(/\s+[•●▪◦➤➔·]\s*/g, "\n• ")
+    .replace(/\s+(?=\d{1,2}[.)]\s+)/g, "\n");
+}
+
+function captionSubstance(text: string): string {
+  return text
+    .replace(/#\w+/g, " ")
+    .replace(/@\w+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * Turn a social caption / post text into a structured recipe.
  * Handles common Reel formats: Ingredients:/Instructions: headers,
@@ -75,9 +100,7 @@ export function recipeFromCaption(
     image?: string | null;
   },
 ): Recipe {
-  const rawLines = caption
-    .replace(/\r\n/g, "\n")
-    .replace(/\u2028|\u2029/g, "\n")
+  const rawLines = expandCaptionForParse(caption)
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
@@ -165,11 +188,11 @@ export function recipeFromCaption(
     );
   }
 
-  // Reject near-empty social captions (title-only videos, etc.)
+  // Reject near-empty social captions (title-only videos, hashtag soup, etc.)
   if (
     !ingredients.length &&
     steps.length <= 2 &&
-    steps.join(" ").length < 80
+    captionSubstance(steps.join(" ")).length < 80
   ) {
     throw new Error(
       "That post's caption doesn't look like a full recipe. Paste the ingredients and steps from the caption (or comments) instead.",

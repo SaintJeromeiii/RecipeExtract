@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RecipeGuru Privacy Policy</title>
+  <style>
+    :root {
+      --bg: #0e1519;
+      --surface: #162126;
+      --border: #2a3a40;
+      --text: #f7f3eb;
+      --muted: #c4b8a8;
+      --accent: #ff5a3c;
+      --mint: #5ec8b6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    .wrap {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 40px 20px 80px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 28px;
+    }
+    h1, h2 { margin-top: 0; }
+    h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+    h2 {
+      margin-top: 2rem;
+      font-size: 1.1rem;
+      color: var(--mint);
+    }
+    p, li { color: var(--muted); }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+    .meta {
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+    a { color: var(--mint); }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <article class="card">
+      <div class="eyebrow">RecipeGuru</div>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Last updated: September 8, 2026. Android package: com.recipeextract.app</p>
+
+      <p>
+        RecipeGuru (“we”, “our”, or “the app”) is a recipe clipping and cooking app.
+        This policy explains what information is handled when you use the RecipeGuru
+        Android app, the RecipeGuru website, and related RecipeGuru services.
+      </p>
+
+      <h2>Information we handle</h2>
+      <ul>
+        <li>
+          <strong>Saved recipes, weekly meals, and grocery lists.</strong>
+          Titles, ingredients, steps, source links, meal categories, and grocery items
+          stay on your device (or in this browser if you use the website). They are not
+          stored in a shared RecipeGuru account.
+        </li>
+        <li>
+          <strong>Recipe extraction.</strong>
+          When you paste a recipe URL, share a link into the app, or paste caption text,
+          that URL or text is sent to the RecipeGuru extract service so we can return a
+          title, ingredients, and steps.
+        </li>
+        <li>
+          <strong>Backups you export.</strong>
+          If you export a backup from Help, that file stays wherever you save or send it.
+          RecipeGuru does not receive a copy unless you choose to share it with us.
+        </li>
+        <li>
+          <strong>No account.</strong>
+          RecipeGuru does not require a login, email address, or user profile.
+        </li>
+      </ul>
+
+      <h2>How extraction works</h2>
+      <p>
+        The extract service fetches the page or social caption you asked for and parses
+        a recipe from it. For some social captions, the service may send the caption text
+        to Google Gemini so the ingredients and steps can be cleaned up. We use that
+        information only to return a recipe to you.
+      </p>
+      <p>
+        The extract service is hosted on Railway. We rate-limit clipping so the service
+        stays available during testing. The source website or social platform you asked
+        us to fetch, and Google if Gemini is used, may also process the URL or caption
+        under their own policies.
+      </p>
+
+      <h2>What we do not do</h2>
+      <ul>
+        <li>We do not sell your information.</li>
+        <li>We do not use your recipes or grocery lists for advertising or profiling.</li>
+        <li>We do not require location, contacts, camera, or microphone access for the core app.</li>
+        <li>We do not include a third-party analytics or advertising SDK in the current Android app.</li>
+      </ul>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li>Delete individual saved recipes or grocery items in the app.</li>
+        <li>Clear your grocery list in the app.</li>
+        <li>Export a backup from Help, then uninstall to remove on-device RecipeGuru data.</li>
+      </ul>
+      <p>
+        If your device backs up app data (for example through Google backup), copies of
+        your local RecipeGuru data may be included in those backups according to your
+        device settings.
+      </p>
+
+      <h2>Children</h2>
+      <p>
+        RecipeGuru is not directed to children under 13, and we do not knowingly collect
+        personal information from children.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        We may update this policy as the app changes. When we do, we will update the
+        date at the top of this page.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about this policy, or a failed extract during testing, can be sent
+        through
+        <a href="https://github.com/SaintJeromeiii/legal-pages/issues">GitHub issues</a>
+        or by using <strong>Help → Report a problem</strong> in the Android app.
+      </p>
+      <p>
+        Tester notes:
+        <a href="/testers.html">recipeextract-production.up.railway.app/testers.html</a>
+      </p>
+    </article>
+  </main>
+</body>
+</html>

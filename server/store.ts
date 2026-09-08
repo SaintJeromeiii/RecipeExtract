@@ -19,6 +19,11 @@ import {
   normalizeGroceryName,
   parseIngredient,
 } from "../shared/ingredients.ts";
+import {
+  hydrateWeeklyMeal,
+  isWeekday,
+  sortWeeklyMeals,
+} from "../shared/weekly.ts";
 import type {
   GroceryCategory,
   GroceryItem,
@@ -26,6 +31,8 @@ import type {
   Recipe,
   RecipePatch,
   SavedRecipe,
+  Weekday,
+  WeeklyMeal,
 } from "../shared/types.ts";
 
 const dataFile = path.resolve(
@@ -37,6 +44,7 @@ type StoreFile = {
   recipes: SavedRecipe[];
   grocery: GroceryItem[];
   groceryCategoryOrder: GroceryCategory[];
+  weekly: WeeklyMeal[];
 };
 
 let cache: StoreFile | null = null;
@@ -96,7 +104,10 @@ function hydrateSaved(value: unknown): SavedRecipe | null {
 }
 
 async function loadStore(): Promise<StoreFile> {
-  if (cache) return cache;
+  if (cache) {
+    cache.weekly ??= [];
+    return cache;
+  }
   try {
     const raw = await readFile(dataFile, "utf8");
     const parsed = JSON.parse(raw) as Partial<StoreFile>;
@@ -106,12 +117,16 @@ async function loadStore(): Promise<StoreFile> {
         : [],
       grocery: compactGroceryList(Array.isArray(parsed.grocery) ? parsed.grocery : []),
       groceryCategoryOrder: resolveCategoryOrder(parsed.groceryCategoryOrder),
+      weekly: Array.isArray(parsed.weekly)
+        ? parsed.weekly.map(hydrateWeeklyMeal).filter((item): item is WeeklyMeal => Boolean(item))
+        : [],
     };
   } catch {
     cache = {
       recipes: [],
       grocery: [],
       groceryCategoryOrder: resolveCategoryOrder(),
+      weekly: [],
     };
   }
   return cache;
@@ -237,6 +252,9 @@ export async function removeRecipe(id: string): Promise<void> {
     throw new Error("That saved recipe was not found.");
   }
   store.recipes = store.recipes.filter((item) => item.id !== id);
+  store.weekly = store.weekly.map((meal) =>
+    meal.recipeId === id ? { ...meal, recipeId: null } : meal,
+  );
   await persist(store);
 }
 
@@ -353,4 +371,92 @@ export async function setGroceryCategoryOrder(
   store.groceryCategoryOrder = resolveCategoryOrder(order);
   await persist(store);
   return store.groceryCategoryOrder;
+}
+
+export async function listWeekly(): Promise<WeeklyMeal[]> {
+  const store = await loadStore();
+  return sortWeeklyMeals(store.weekly);
+}
+
+export async function addWeeklyMeal(input: {
+  title?: string;
+  recipeId?: string;
+  ingredients?: string[];
+  weekday?: Weekday | null;
+}): Promise<{ meal: WeeklyMeal; grocery: GroceryItem[] }> {
+  const store = await loadStore();
+  let title = typeof input.title === "string" ? input.title.trim() : "";
+  const recipeId = typeof input.recipeId === "string" && input.recipeId ? input.recipeId : null;
+  let shopLines = Array.isArray(input.ingredients)
+    ? input.ingredients.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : [];
+
+  if (recipeId) {
+    const recipe = store.recipes.find((item) => item.id === recipeId);
+    if (!recipe) {
+      throw new Error("Save that recipe first, then add it to the week.");
+    }
+    title = title || recipe.title;
+    if (!shopLines.length) shopLines = recipe.ingredients;
+  }
+
+  if (!title) {
+    throw new Error("Give this meal a name.");
+  }
+
+  const meal: WeeklyMeal = {
+    id: randomUUID(),
+    title,
+    recipeId,
+    ingredients: recipeId ? [] : shopLines,
+    weekday: isWeekday(input.weekday) ? input.weekday : null,
+    checked: false,
+    addedAt: new Date().toISOString(),
+  };
+  store.weekly = [...store.weekly, meal];
+  await persist(store);
+
+  if (!shopLines.length && !recipeId) {
+    shopLines = [title];
+  }
+  const grocery = shopLines.length
+    ? await addGroceryLines({
+        ingredients: shopLines,
+        recipeId: recipeId ?? undefined,
+        recipeTitle: title,
+      })
+    : store.grocery;
+  return { meal, grocery };
+}
+
+export async function updateWeeklyMeal(
+  id: string,
+  patch: { weekday?: Weekday | null; title?: string; checked?: boolean },
+): Promise<WeeklyMeal> {
+  const store = await loadStore();
+  const current = store.weekly.find((item) => item.id === id);
+  if (!current) throw new Error("That weekly meal was not found.");
+  const next: WeeklyMeal = {
+    ...current,
+    title:
+      typeof patch.title === "string" && patch.title.trim() ? patch.title.trim() : current.title,
+    weekday: "weekday" in patch ? (isWeekday(patch.weekday) ? patch.weekday : null) : current.weekday,
+    checked: typeof patch.checked === "boolean" ? patch.checked : current.checked,
+  };
+  store.weekly = store.weekly.map((item) => (item.id === id ? next : item));
+  await persist(store);
+  return next;
+}
+
+export async function removeWeeklyMeal(id: string): Promise<void> {
+  const store = await loadStore();
+  store.weekly = store.weekly.filter((item) => item.id !== id);
+  await persist(store);
+}
+
+export async function clearWeekly(): Promise<WeeklyMeal[]> {
+  const store = await loadStore();
+  store.weekly = [];
+  await persist(store);
+  return [];
 }

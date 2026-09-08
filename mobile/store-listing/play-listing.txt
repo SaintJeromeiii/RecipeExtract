@@ -1,0 +1,44 @@
+RecipeGuru Play Console listing
+Package: com.recipeextract.app
+Version to upload: 1.0.6 (versionCode 7)
+
+Short description (80 chars max):
+Clip recipe URLs and captions. Cook, plan the week, and shop from one list.
+
+Full description:
+RecipeGuru turns a recipe link or social caption into a clean recipe you can cook from.
+
+Paste a blog URL, TikTok, or Instagram caption. RecipeGuru keeps the title, ingredients, and steps — not the blog filler. Save recipes on your phone, add them to this week, and build a grocery list by aisle.
+
+• Clip from a URL or pasted caption
+• Share a link into RecipeGuru from other apps
+• Save a private recipe library on your device
+• Plan weekly meals and auto-add grocery items
+• Cook mode with step timers and a stay-awake screen
+• Scale servings, edit, print PDF, and export a backup
+
+Social videos are often blocked by the platform. If a Reel will not extract, copy the caption (ingredients and steps) and paste it in Caption text.
+
+No account required. Recipes stay on your device. See the privacy policy for how extraction works.
+
+Privacy policy URL:
+https://recipeextract-production.up.railway.app/privacy.html
+
+Tester notes URL:
+https://recipeextract-production.up.railway.app/testers.html
+
+Support:
+Help → Report a problem in the app
+https://github.com/SaintJeromeiii/legal-pages/issues
+
+Play Console setup for wide testing:
+1. Create the app if needed (name RecipeGuru, default language English).
+2. Set privacy policy URL above.
+3. App content: not for children, no ads, no in-app purchases for this test build.
+4. Data safety: no collected user data stored on our servers except URLs/captions sent to extract a recipe. No sharing for advertising.
+5. Release → Testing → Internal testing (up to 100 Google accounts). Upload the AAB. Add testers. Share the opt-in link.
+6. Closed testing: add the Google Group recipeguru-testers@googlegroups.com as testers, then promote the same AAB. That is the wider track before production.
+
+Build the Play bundle from the repo:
+cd mobile && npm run aab
+Output: mobile/dist/RecipeGuru.aab

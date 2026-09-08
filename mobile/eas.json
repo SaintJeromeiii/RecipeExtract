@@ -18,6 +18,14 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://recipeextract-production.up.railway.app"
+      }
     }
   }
 }

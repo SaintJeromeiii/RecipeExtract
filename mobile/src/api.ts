@@ -1,7 +1,15 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { extractRecipe as extractFromPage } from "../../shared/extract";
-import { isSocialUrl, recipeFromCaption } from "../../shared/socialExtract";
+import {
+  extractSocialRecipe,
+  isSocialUrl,
+  normalizeSourceUrl,
+  recipeFromCaption,
+  socialPlatform,
+} from "../../shared/socialExtract";
+import { CAPTION_FALLBACK, recipeLooksEmpty } from "../../shared/recipeQuality";
 import type {
   GroceryCategory,
   GroceryItem,
@@ -9,22 +17,52 @@ import type {
   Recipe,
   RecipePatch,
   SavedRecipe,
+  Weekday,
+  WeeklyMeal,
 } from "./types";
 import {
   addGroceryLines,
+  addWeeklyMeal as persistWeeklyMeal,
   clearAllGrocery as clearAll,
   clearCheckedGrocery as clearChecked,
+  clearWeekly,
   listGrocery as readGrocery,
   listRecipes,
+  listWeekly,
   removeGroceryItem,
   removeRecipe,
+  removeWeeklyMeal as deleteWeeklyMeal,
   saveRecipe as persistRecipe,
   setAllGroceryChecked as setAllChecked,
   setGroceryCategory,
   setGroceryCategoryOrder as persistCategoryOrder,
   setGroceryChecked,
   updateRecipe,
+  updateWeeklyMeal as persistWeeklyPatch,
+  exportStore,
+  importStore,
 } from "./localStore";
+
+const HOUSEHOLD_KEY_STORAGE = "recipeextract.household-key";
+let householdKey = "";
+
+export async function loadHouseholdKey(): Promise<string> {
+  householdKey = ((await AsyncStorage.getItem(HOUSEHOLD_KEY_STORAGE)) || "").trim();
+  return householdKey;
+}
+
+export async function saveHouseholdKey(value: string): Promise<string> {
+  householdKey = value.trim();
+  if (householdKey) await AsyncStorage.setItem(HOUSEHOLD_KEY_STORAGE, householdKey);
+  else await AsyncStorage.removeItem(HOUSEHOLD_KEY_STORAGE);
+  return householdKey;
+}
+
+function extractHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (householdKey) headers["X-RecipeGuru-Key"] = householdKey;
+  return headers;
+}
 
 const API_PORT = 8787;
 
@@ -78,31 +116,59 @@ export function getApiBaseUrl(): string {
 
 async function extractViaApi(url: string): Promise<Recipe> {
   const base = getApiBaseUrl();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 40000);
   let response: Response;
   try {
     response = await fetch(`${base}/api/extract`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: extractHeaders(),
       body: JSON.stringify({ url }),
+      signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(CAPTION_FALLBACK);
+    }
     throw new Error(
       `Can't reach the recipe service at ${base}. Keep the extractor running, or paste the Reel caption text instead.`,
     );
+  } finally {
+    clearTimeout(timer);
   }
   const data = (await response.json()) as Recipe & { error?: string };
   if (!response.ok) {
     throw new Error(data.error || "Could not extract that recipe.");
   }
+  if (recipeLooksEmpty(data)) {
+    throw new Error(CAPTION_FALLBACK);
+  }
   return data;
 }
 
 export async function extractRecipe(url: string): Promise<Recipe> {
-  // Social Reels need the server (yt-dlp). Blog pages work on-device.
-  if (isSocialUrl(url)) {
-    return extractViaApi(url);
+  const normalized = normalizeSourceUrl(url);
+  // Social Reels need the server (yt-dlp / Gemini). Blog pages work on-device.
+  if (isSocialUrl(normalized)) {
+    try {
+      return await extractViaApi(normalized);
+    } catch (apiError) {
+      if (socialPlatform(normalized) === "tiktok") {
+        try {
+          const social = await extractSocialRecipe(normalized);
+          if (!recipeLooksEmpty(social)) return social;
+        } catch {
+          // Keep the API error — it is usually the clearer message.
+        }
+      }
+      throw apiError;
+    }
   }
-  return extractFromPage(url);
+  const pageRecipe = await extractFromPage(normalized);
+  if (recipeLooksEmpty(pageRecipe)) {
+    throw new Error(CAPTION_FALLBACK);
+  }
+  return pageRecipe;
 }
 
 export async function extractRecipeFromCaption(
@@ -119,17 +185,30 @@ export async function extractRecipeFromCaption(
   try {
     const response = await fetch(`${base}/api/extract-text`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: extractHeaders(),
       body: JSON.stringify({ text: trimmed, sourceUrl }),
     });
     if (response.ok) {
-      return (await response.json()) as Recipe;
+      const data = (await response.json()) as Recipe;
+      if (!recipeLooksEmpty(data)) return data;
     }
   } catch {
     // Offline / no server — parse on device.
   }
 
-  return recipeFromCaption(trimmed, sourceUrl || "https://pasted.local/caption");
+  const local = recipeFromCaption(trimmed, sourceUrl || "https://pasted.local/caption");
+  if (recipeLooksEmpty(local)) {
+    throw new Error("That text doesn't look like a recipe yet. Include ingredients and steps.");
+  }
+  return local;
+}
+
+export async function exportKitchen(): Promise<string> {
+  return exportStore();
+}
+
+export async function importKitchen(raw: string) {
+  return importStore(raw);
 }
 
 export async function listSavedRecipes(): Promise<SavedRecipe[]> {
@@ -204,4 +283,32 @@ export async function setGroceryCategoryOrder(
   categoryOrder: GroceryCategory[],
 ): Promise<GroceryCategory[]> {
   return persistCategoryOrder(categoryOrder);
+}
+
+export async function listWeeklyMeals(): Promise<WeeklyMeal[]> {
+  return listWeekly();
+}
+
+export async function addWeeklyMeal(input: {
+  title?: string;
+  recipeId?: string;
+  ingredients?: string[];
+  weekday?: Weekday | null;
+}): Promise<{ meal: WeeklyMeal; grocery: GroceryItem[] }> {
+  return persistWeeklyMeal(input);
+}
+
+export async function updateWeeklyMeal(
+  id: string,
+  patch: { weekday?: Weekday | null; title?: string; checked?: boolean },
+): Promise<WeeklyMeal> {
+  return persistWeeklyPatch(id, patch);
+}
+
+export async function removeWeeklyMeal(id: string): Promise<void> {
+  await deleteWeeklyMeal(id);
+}
+
+export async function clearWeeklyMeals(): Promise<WeeklyMeal[]> {
+  return clearWeekly();
 }
