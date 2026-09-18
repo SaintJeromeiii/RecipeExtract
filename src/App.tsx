@@ -588,7 +588,7 @@ export default function App() {
               alt=""
               className="h-10 w-10 rounded-2xl"
             />
-            RecipeGuru
+            Pluck
           </button>
           <div className="flex items-center gap-2">
             <a
@@ -612,7 +612,7 @@ export default function App() {
             <span className="brand-mark" aria-hidden="true">
               <img src="/owl-logo.png" alt="" />
             </span>
-            RecipeGuru
+            Pluck
           </button>
           <div className="topbar-actions">
             <button className="ghost" onClick={goHome}>
@@ -636,7 +636,7 @@ export default function App() {
             Skip the blog. Keep the recipe.
           </p>
           <h1 className="mt-3 max-w-3xl font-display text-[clamp(2.6rem,7vw,5.2rem)] leading-[0.95] tracking-tight text-espresso">
-            Paste a URL.
+            Drop a ripe link.
             <em className="mt-1 block italic text-olive">Cook the actual recipe.</em>
           </h1>
           <p className="mt-5 max-w-xl text-[1.05rem] leading-relaxed text-olive/80">

@@ -8,6 +8,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { ShareIntentProvider, useShareIntentContext } from "expo-share-intent";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useFonts, Inter_400Regular, Inter_600SemiBold, Inter_700Bold } from "@expo-google-fonts/inter";
+import { Outfit_700Bold } from "@expo-google-fonts/outfit";
 import {
   ActivityIndicator,
   Alert,
@@ -26,9 +28,10 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { firstHttpUrl, isSocialUrl } from "../shared/social";
-import { EXTRACT_WAIT_HINT, SAMPLE_RECIPE } from "../shared/recipeQuality";
+import { canOpenSource } from "../shared/recipeSource";
+import { SAMPLE_RECIPE } from "../shared/recipeQuality";
 import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingredients";
-import { parseShopLines, sortWeeklyMeals } from "../shared/weekly";
+import { sortWeeklyMeals } from "../shared/weekly";
 import {
   groceryCategoryLabel,
   groupGroceryItems,
@@ -82,6 +85,15 @@ import type {
   TimerMatch,
   WeeklyMeal,
 } from "./src/types";
+import ModernHome from "./src/ui/ModernHome";
+import NewHomeScreen from "./src/ui/NewHomeScreen";
+import WeeklyList from "./src/ui/WeeklyList";
+import LibraryList from "./src/ui/LibraryList";
+import BottomNav, { type BottomTab } from "./src/ui/BottomNav";
+import MobileOnboardingTutorial from "./src/ui/MobileOnboardingTutorial";
+import { colors, fonts } from "./src/ui/tokens";
+
+const PREVIEW_NEW_HOME = true;
 
 type LibraryFilter = "all" | "favorites" | RecipeCategory;
 
@@ -129,7 +141,7 @@ function AppInner() {
   const [url, setUrl] = useState("");
   const [captionText, setCaptionText] = useState("");
   const [inputMode, setInputMode] = useState<"url" | "caption">("url");
-  const [view, setView] = useState<"home" | "recipe">("home");
+  const [view, setView] = useState<"home" | "recipe" | "week" | "library">("home");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
@@ -144,7 +156,6 @@ function AppInner() {
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [weekly, setWeekly] = useState<WeeklyMeal[]>([]);
   const [weeklyTitle, setWeeklyTitle] = useState("");
-  const [weeklyShop, setWeeklyShop] = useState("");
   const [grocery, setGrocery] = useState<GroceryItem[]>([]);
   const [categoryOrder, setCategoryOrder] = useState<GroceryCategory[]>(() =>
     resolveCategoryOrder(),
@@ -168,12 +179,15 @@ function AppInner() {
   const [groceryDraft, setGroceryDraft] = useState("");
   const [removedRecipe, setRemovedRecipe] = useState<SavedRecipe | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
   const [loadingHint, setLoadingHint] = useState("Reading the page and cutting the filler…");
   const [householdKey, setHouseholdKey] = useState("");
   const [householdSaved, setHouseholdSaved] = useState(false);
   const timers = useCookTimers();
   const offeredClipboard = useRef("");
   const { shareIntent, resetShareIntent } = useShareIntentContext();
+
+  const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_600SemiBold, Inter_700Bold, Outfit_700Bold });
 
   const savedMatch = useMemo(() => {
     if (!recipe) return null;
@@ -214,6 +228,11 @@ function AppInner() {
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (tutorialOpen) {
+        setTutorialOpen(false);
+        void AsyncStorage.setItem(ONBOARD_KEY, "1");
+        return true;
+      }
       if (helpOpen) {
         setHelpOpen(false);
         return true;
@@ -230,7 +249,7 @@ function AppInner() {
         setGroceryOpen(false);
         return true;
       }
-      if (view === "recipe") {
+      if (view === "recipe" || view === "week" || view === "library") {
         setView("home");
         setError(null);
         return true;
@@ -238,7 +257,7 @@ function AppInner() {
       return false;
     });
     return () => sub.remove();
-  }, [assigningItem, cookOpen, groceryOpen, helpOpen, view]);
+  }, [assigningItem, cookOpen, groceryOpen, helpOpen, tutorialOpen, view]);
 
   async function extract(nextUrl = url) {
     const trimmed = nextUrl.trim();
@@ -251,18 +270,21 @@ function AppInner() {
     setLoading(true);
     setLoadingHint(
       isSocialUrl(extracted)
-        ? EXTRACT_WAIT_HINT
+        ? "Pulling the recipe from that video — keep the app open."
         : "Reading the page and cutting the filler…",
     );
     setError(null);
     setCookOpen(false);
     try {
       const data = await extractRecipe(extracted);
-      setRecipe(data);
+      const kept = await keepClip(data);
+      setRecipe(kept);
       setCheckedIngredients(new Set());
       setDoneSteps(new Set());
       setCookIndex(0);
       setView("recipe");
+      setUrl("");
+      setCaptionText("");
     } catch (err) {
       setRecipe(null);
       setView("home");
@@ -286,11 +308,14 @@ function AppInner() {
     setCookOpen(false);
     try {
       const data = await extractRecipeFromCaption(trimmed, url.trim() || undefined);
-      setRecipe(data);
+      const kept = await keepClip(data);
+      setRecipe(kept);
       setCheckedIngredients(new Set());
       setDoneSteps(new Set());
       setCookIndex(0);
       setView("recipe");
+      setUrl("");
+      setCaptionText("");
     } catch (err) {
       setRecipe(null);
       setView("home");
@@ -323,7 +348,7 @@ function AppInner() {
 
   useEffect(() => {
     void AsyncStorage.getItem(ONBOARD_KEY).then((value) => {
-      if (!value) setHelpOpen(true);
+      if (!value) setTutorialOpen(true);
     });
   }, []);
 
@@ -374,6 +399,33 @@ function AppInner() {
   function upsertSaved(saved: SavedRecipe) {
     setSavedRecipes((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
     if (recipe && recipeKey(recipe) === recipeKey(saved)) setRecipe({ ...saved });
+  }
+
+  async function keepClip(data: Recipe) {
+    try {
+      const saved = await saveRecipe(data);
+      upsertSaved(saved);
+      return saved;
+    } catch {
+      return data;
+    }
+  }
+
+  function openSaved(item: SavedRecipe) {
+    setRecipe(item);
+    setUrl(item.sourceUrl);
+    setCheckedIngredients(new Set());
+    setDoneSteps(new Set());
+    setCookIndex(0);
+    setCookOpen(false);
+    setError(null);
+    setView("recipe");
+  }
+
+  function openOriginal(nextUrl: string) {
+    void Linking.openURL(nextUrl).catch(() => {
+      setError("Couldn't open that post.");
+    });
   }
 
   async function persistPatch(patch: Parameters<typeof updateSavedRecipe>[1]) {
@@ -439,18 +491,36 @@ function AppInner() {
     setGrocery(result.grocery);
   }
 
+  async function handlePasteCapture() {
+    const text = (await Clipboard.getStringAsync()).trim();
+    if (!text) {
+      setError("Nothing on the clipboard to paste.");
+      return;
+    }
+    setError(null);
+    if (inputMode === "url") {
+      setUrl(urlFromLink(text) || firstHttpUrl(text) || text);
+      return;
+    }
+    setCaptionText(text);
+  }
+
+  function handleClearCapture() {
+    if (inputMode === "url") setUrl("");
+    else setCaptionText("");
+    setError(null);
+  }
+
   async function handleAddWeeklyCustom() {
     const trimmed = weeklyTitle.trim();
     if (!trimmed) return;
     setError(null);
     const result = await addWeeklyMeal({
       title: trimmed,
-      ingredients: parseShopLines(weeklyShop),
     });
     upsertWeekly(result.meal);
     setGrocery(result.grocery);
     setWeeklyTitle("");
-    setWeeklyShop("");
   }
 
   async function handleWeeklyFromRecipe() {
@@ -511,7 +581,7 @@ function AppInner() {
     try {
       const json = await exportKitchen();
       await Share.share({
-        title: "RecipeGuru backup",
+        title: "Pluck backup",
         message: json,
       });
     } catch (err) {
@@ -525,7 +595,7 @@ function AppInner() {
       if (!raw.startsWith("{")) {
         Alert.alert(
           "No backup on the clipboard",
-          "Copy a RecipeGuru backup JSON, then tap Restore backup again.",
+          "Copy a Pluck backup JSON, then tap Restore backup again.",
         );
         return;
       }
@@ -546,9 +616,9 @@ function AppInner() {
 
   function handleReport() {
     void Share.share({
-      title: "RecipeGuru problem",
+      title: "Pluck problem",
       message: [
-        "RecipeGuru test report",
+        "Pluck test report",
         url ? `URL: ${url}` : "",
         error ? `Error: ${error}` : "",
         "What happened:",
@@ -557,6 +627,11 @@ function AppInner() {
         .filter(Boolean)
         .join("\n"),
     });
+  }
+
+  function dismissTutorial() {
+    setTutorialOpen(false);
+    void AsyncStorage.setItem(ONBOARD_KEY, "1");
   }
 
   function dismissHelp() {
@@ -607,11 +682,60 @@ function AppInner() {
     recipe?.totalTime ? `Total ${recipe.totalTime}` : null,
   ].filter(Boolean) as string[];
 
+  const bottomTab: BottomTab = groceryOpen
+    ? "shopping"
+    : helpOpen
+      ? "help"
+      : view === "library"
+        ? "saved"
+        : view === "week"
+          ? "week"
+          : "home";
+
+  function onBottomTab(tab: BottomTab) {
+    setCookOpen(false);
+    setError(null);
+    if (tab === "home") {
+      setGroceryOpen(false);
+      setHelpOpen(false);
+      setView("home");
+      return;
+    }
+    if (tab === "saved") {
+      setGroceryOpen(false);
+      setHelpOpen(false);
+      setView("library");
+      return;
+    }
+    if (tab === "week") {
+      setGroceryOpen(false);
+      setHelpOpen(false);
+      setView("week");
+      return;
+    }
+    if (tab === "shopping") {
+      setHelpOpen(false);
+      setGroceryOpen(true);
+      return;
+    }
+    setGroceryOpen(false);
+    setHelpOpen(true);
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <View style={styles.topbar}>
         <Pressable
-          style={styles.brand}
+          style={styles.brandName}
+          onPress={() => {
+            setView("home");
+            setCookOpen(false);
+            setError(null);
+          }}
+        >
+          <Text style={styles.brandText}>Pluck</Text>
+        </Pressable>
+        <Pressable
           onPress={() => {
             setView("home");
             setCookOpen(false);
@@ -619,292 +743,129 @@ function AppInner() {
           }}
         >
           <Image source={require("./assets/owl-logo.png")} style={styles.brandMark} />
-          <Text style={styles.brandText}>RecipeGuru</Text>
         </Pressable>
-        <View style={styles.topActions}>
-          <Pressable
-            style={styles.ghost}
-            onPress={() => {
-              setView("home");
-              setCookOpen(false);
-              setError(null);
-            }}
-          >
-            <Text style={styles.ghostText}>Week {weekly.length}</Text>
-          </Pressable>
-          <Pressable style={styles.ghost} onPress={() => setGroceryOpen(true)}>
-            <Text style={styles.ghostText}>
-              Grocery {grocery.filter((item) => !item.checked).length}
-            </Text>
-          </Pressable>
-          <Pressable style={styles.ghost} onPress={() => setHelpOpen(true)}>
-            <Text style={styles.ghostText}>Help</Text>
-          </Pressable>
-        </View>
       </View>
 
+      <View style={styles.body}>
       {view === "home" ? (
-        <ScrollView contentContainerStyle={styles.hero} keyboardShouldPersistTaps="handled">
-          <Text style={styles.eyebrow}>Skip the blog. Keep the recipe.</Text>
-          <Text style={styles.title}>Paste a URL.</Text>
-          <Text style={styles.titleEm}>Or a Reel caption.</Text>
-          <View style={styles.composer}>
-            <View style={styles.modeSwitch}>
-              <Pressable
-                style={[styles.modeBtn, inputMode === "url" && styles.modeBtnOn]}
-                onPress={() => setInputMode("url")}
-              >
-                <Text style={[styles.modeBtnText, inputMode === "url" && styles.modeBtnTextOn]}>
-                  URL
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modeBtn, inputMode === "caption" && styles.modeBtnOn]}
-                onPress={() => setInputMode("caption")}
-              >
-                <Text
-                  style={[styles.modeBtnText, inputMode === "caption" && styles.modeBtnTextOn]}
-                >
-                  Caption text
-                </Text>
-              </Pressable>
-            </View>
-          <View style={styles.urlForm}>
-            {inputMode === "url" ? (
-              <TextInput
-                value={url}
-                onChangeText={setUrl}
-                placeholder="Recipe blog, Facebook Reel, TikTok…"
-                placeholderTextColor="#7f8e89"
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                style={styles.input}
-                onSubmitEditing={() => void extract()}
-              />
-            ) : (
-              <TextInput
-                value={captionText}
-                onChangeText={setCaptionText}
-                placeholder={"Ingredients:\n1 cup flour\n...\n\nInstructions:\n1. Mix..."}
-                placeholderTextColor="#7f8e89"
-                multiline
-                style={[styles.input, styles.captionInput]}
-                textAlignVertical="top"
-              />
-            )}
-            <View style={styles.formRow}>
-              <Pressable
-                style={styles.ghost}
-                onPress={async () => {
-                  const text = await Clipboard.getStringAsync();
-                  if (!text) return;
-                  if (inputMode === "url") setUrl(text.trim());
-                  else setCaptionText(text.trim());
-                }}
-              >
-                <Text style={styles.ghostText}>Paste</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.ghost,
-                  ((inputMode === "url" ? !url : !captionText) || loading) && styles.disabled,
-                ]}
-                disabled={(inputMode === "url" ? !url : !captionText) || loading}
-                onPress={() => {
-                  if (inputMode === "url") setUrl("");
-                  else setCaptionText("");
-                  setError(null);
-                }}
-              >
-                <Text style={styles.ghostText}>Clear</Text>
-              </Pressable>
-              <Pressable
-                style={styles.primary}
-                onPress={() =>
-                  void (inputMode === "url" ? extract() : extractCaption())
-                }
-              >
-                <Text style={styles.primaryText}>{loading ? "Extracting…" : "Extract"}</Text>
-              </Pressable>
-            </View>
-          </View>
-          </View>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Text style={styles.libraryMeta}>
-            Reels often block a direct clip. If Extract fails, switch to Caption text and
-            paste the ingredients and steps. You can also share a link into RecipeGuru.
-          </Text>
-          <Pressable style={styles.ghost} onPress={() => void openSample()}>
-            <Text style={styles.ghostText}>Try a sample recipe</Text>
-          </Pressable>
-          <Text style={styles.sectionTitle}>Weekly meals</Text>
-          <Text style={styles.libraryMeta}>
-            Add a clipped recipe or an easy meal. It goes on the grocery list too.
-          </Text>
-          <Text style={styles.libraryMeta}>Easy meal</Text>
-          <TextInput
-            style={styles.search}
-            value={weeklyTitle}
-            onChangeText={setWeeklyTitle}
-            onSubmitEditing={() => void handleAddWeeklyCustom()}
-          />
-          <Text style={[styles.libraryMeta, { marginTop: 8 }]}>Need from the store</Text>
-          <TextInput
-            style={styles.search}
-            value={weeklyShop}
-            onChangeText={setWeeklyShop}
-          />
-          <Pressable
-            style={[styles.primary, !weeklyTitle.trim() && styles.disabled]}
-            disabled={!weeklyTitle.trim()}
-            onPress={() => void handleAddWeeklyCustom()}
-          >
-            <Text style={styles.primaryText}>Add meal</Text>
-          </Pressable>
-          {weekly.length === 0 ? (
-            <Text style={styles.libraryMeta}>Nothing planned yet.</Text>
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={PREVIEW_NEW_HOME ? styles.newHomeScroll : styles.hero}
+          keyboardShouldPersistTaps="handled"
+        >
+          {PREVIEW_NEW_HOME ? (
+            <NewHomeScreen
+              inputMode={inputMode}
+              onChangeInputMode={setInputMode}
+              url={url}
+              onChangeUrl={setUrl}
+              captionText={captionText}
+              onChangeCaption={setCaptionText}
+              onTranscribe={() => void extract()}
+              onExtractCaption={() => void extractCaption()}
+              onPaste={() => void handlePasteCapture()}
+              onClear={handleClearCapture}
+              loading={loading}
+              error={error}
+            />
           ) : (
-            sortWeeklyMeals(weekly).map((meal) => {
-              const linked = meal.recipeId
-                ? savedRecipes.find((item) => item.id === meal.recipeId)
-                : undefined;
-              return (
-                <View key={meal.id} style={styles.weeklyRow}>
-                  <Pressable onPress={() => void handleToggleWeekly(meal, !meal.checked)}>
-                    <Check checked={meal.checked} />
-                  </Pressable>
-                  <Pressable
-                    style={{ flex: 1 }}
-                    onPress={() => {
-                      if (!linked) {
-                        void handleToggleWeekly(meal, !meal.checked);
-                        return;
-                      }
-                      setRecipe(linked);
-                      setUrl(linked.sourceUrl);
-                      setCheckedIngredients(new Set());
-                      setDoneSteps(new Set());
-                      setView("recipe");
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.libraryName,
-                        meal.checked ? { textDecorationLine: "line-through", opacity: 0.55 } : null,
-                      ]}
-                    >
-                      {meal.title}
-                    </Text>
-                  </Pressable>
-                  <Pressable onPress={() => void handleRemoveWeekly(meal)}>
-                    <Text style={styles.groceryRemove}>Remove</Text>
-                  </Pressable>
-                </View>
-              );
-            })
+            <ModernHome
+              inputMode={inputMode}
+              setInputMode={setInputMode}
+              url={url}
+              setUrl={setUrl}
+              captionText={captionText}
+              setCaptionText={setCaptionText}
+              extract={extract}
+              extractCaption={extractCaption}
+              loading={loading}
+              error={error}
+              openSample={openSample}
+            />
           )}
-          {weekly.length ? (
-            <Pressable style={styles.ghost} onPress={() => void clearWeeklyMeals().then(setWeekly)}>
-              <Text style={styles.ghostText}>Clear week</Text>
-            </Pressable>
-          ) : null}
-          <Text style={styles.sectionTitle}>Saved recipes</Text>
-          <TextInput
-            style={styles.search}
-            value={libraryQuery}
-            onChangeText={setLibraryQuery}
-          />
-          <View style={styles.chips}>
-            <Pressable
-              style={[styles.chip, libraryFilter === "all" && styles.chipOn]}
-              onPress={() => setLibraryFilter("all")}
-            >
-              <Text style={styles.chipText}>All {savedRecipes.length}</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.chip, libraryFilter === "favorites" && styles.chipOn]}
-              onPress={() => setLibraryFilter("favorites")}
-            >
-              <Text style={styles.chipText}>
-                Favorites {savedRecipes.filter((item) => item.favorite).length}
-              </Text>
-            </Pressable>
-            {RECIPE_CATEGORIES.map((category) => (
-              <Pressable
-                key={category}
-                style={[styles.chip, libraryFilter === category && styles.chipOn]}
-                onPress={() => setLibraryFilter(category)}
-              >
-                <Text style={styles.chipText}>
-                  {recipeCategoryLabel(category)}{" "}
-                  {savedRecipes.filter((item) => recipeMatchesCategory(item, category)).length}
-                </Text>
-              </Pressable>
-            ))}
+          <View style={styles.homeLibrary}>
+            <LibraryList
+              savedRecipes={savedRecipes}
+              libraryQuery={libraryQuery}
+              setLibraryQuery={setLibraryQuery}
+              libraryFilter={libraryFilter}
+              setLibraryFilter={setLibraryFilter}
+              RECIPE_CATEGORIES={RECIPE_CATEGORIES}
+              recipeCategoryLabel={recipeCategoryLabel}
+              recipeMatchesCategory={recipeMatchesCategory}
+              matchesQuery={matchesQuery}
+              handleFavorite={handleFavorite}
+              handleAddWeeklyRecipe={handleAddWeeklyRecipe}
+              handleShopRecipe={handleShopRecipe}
+              handleRemove={handleRemove}
+              weekRecipeIds={weekRecipeIds}
+              setRecipe={setRecipe}
+              setUrl={setUrl}
+              setCheckedIngredients={setCheckedIngredients}
+              setDoneSteps={setDoneSteps}
+              setView={setView}
+              styles={styles}
+              onOpenRecipe={openSaved}
+            />
           </View>
-          {savedRecipes
-            .filter((item) => {
-              if (libraryFilter === "favorites") return item.favorite;
-              if (libraryFilter !== "all") return recipeMatchesCategory(item, libraryFilter);
-              return true;
-            })
-            .filter((item) => matchesQuery(item, libraryQuery))
-            .map((item) => (
-              <View key={item.id} style={styles.libraryCard}>
-                <View style={styles.libraryCardRow}>
-                <Pressable
-                  style={styles.libraryOpen}
-                  onPress={() => {
-                    setRecipe(item);
-                    setUrl(item.sourceUrl);
-                    setCheckedIngredients(new Set());
-                    setDoneSteps(new Set());
-                    setView("recipe");
-                  }}
-                >
-                  {item.image ? (
-                    <Image source={{ uri: item.image }} style={styles.libraryImage} />
-                  ) : (
-                    <View style={styles.libraryImage}>
-                      <Text style={styles.brandMarkText}>R</Text>
-                    </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.libraryName}>{item.title}</Text>
-                    <Text style={styles.libraryMeta}>
-                      {item.sourceName ?? "Saved"}
-                      {item.categories.length
-                        ? ` · ${item.categories.map(recipeCategoryLabel).join(", ")}`
-                        : ""}
-                      {item.tags.length ? ` · ${item.tags.join(", ")}` : ""}
-                    </Text>
-                  </View>
-                </Pressable>
-                <Pressable onPress={() => void handleFavorite(item)}>
-                  <Text style={styles.chipText}>{item.favorite ? "★" : "☆"}</Text>
-                </Pressable>
-                </View>
-                <View style={styles.libraryActions}>
-                  <Pressable style={styles.ghost} onPress={() => void handleAddWeeklyRecipe(item)}>
-                    <Text style={styles.ghostText}>
-                      {weekRecipeIds.has(item.id) ? "On week" : "Week"}
-                    </Text>
-                  </Pressable>
-                  <Pressable style={styles.ghost} onPress={() => void handleShopRecipe(item)}>
-                    <Text style={styles.ghostText}>Shop</Text>
-                  </Pressable>
-                  <Pressable style={styles.ghost} onPress={() => handleRemove(item)}>
-                    <Text style={styles.ghostText}>Delete</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
+        </ScrollView>
+      ) : null}
+
+      {view === "library" ? (
+        <ScrollView style={styles.body} contentContainerStyle={styles.hero} keyboardShouldPersistTaps="handled">
+          <LibraryList
+            savedRecipes={savedRecipes}
+            libraryQuery={libraryQuery}
+            setLibraryQuery={setLibraryQuery}
+            libraryFilter={libraryFilter}
+            setLibraryFilter={setLibraryFilter}
+            RECIPE_CATEGORIES={RECIPE_CATEGORIES}
+            recipeCategoryLabel={recipeCategoryLabel}
+            recipeMatchesCategory={recipeMatchesCategory}
+            matchesQuery={matchesQuery}
+            handleFavorite={handleFavorite}
+            handleAddWeeklyRecipe={handleAddWeeklyRecipe}
+            handleShopRecipe={handleShopRecipe}
+            handleRemove={handleRemove}
+            weekRecipeIds={weekRecipeIds}
+            setRecipe={setRecipe}
+            setUrl={setUrl}
+            setCheckedIngredients={setCheckedIngredients}
+            setDoneSteps={setDoneSteps}
+            setView={setView}
+            styles={styles}
+            onOpenRecipe={openSaved}
+          />
+        </ScrollView>
+      ) : null}
+
+      {view === "week" ? (
+        <ScrollView style={styles.body} contentContainerStyle={styles.hero} keyboardShouldPersistTaps="handled">
+          <WeeklyList
+            weekly={weekly}
+            weeklyTitle={weeklyTitle}
+            setWeeklyTitle={setWeeklyTitle}
+            handleAddWeeklyCustom={handleAddWeeklyCustom}
+            handleToggleWeekly={handleToggleWeekly}
+            handleRemoveWeekly={handleRemoveWeekly}
+            clearWeeklyMeals={clearWeeklyMeals}
+            savedRecipes={savedRecipes}
+            setRecipe={setRecipe}
+            setUrl={setUrl}
+            setCheckedIngredients={setCheckedIngredients}
+            setDoneSteps={setDoneSteps}
+            setView={setView}
+            sortWeeklyMeals={sortWeeklyMeals}
+            styles={styles}
+            Check={Check}
+            setWeekly={setWeekly}
+            onOpenRecipe={openSaved}
+          />
         </ScrollView>
       ) : null}
 
       {view === "recipe" && recipe ? (
-        <ScrollView contentContainerStyle={styles.recipe}>
+        <ScrollView style={styles.body} contentContainerStyle={styles.recipe}>
           {recipe.image ? (
             <Image source={{ uri: recipe.image }} style={styles.recipeImage} />
           ) : null}
@@ -913,6 +874,11 @@ function AppInner() {
           ) : (
             <Text style={styles.recipeTitle}>{recipe.title}</Text>
           )}
+          {canOpenSource(recipe.sourceUrl) ? (
+            <Pressable onPress={() => openOriginal(recipe.sourceUrl)}>
+              <Text style={styles.sourceLink}>Open original post</Text>
+            </Pressable>
+          ) : null}
           <View style={styles.metaRow}>
             {metaBits.map((bit) => (
               <View key={bit} style={styles.metaChip}>
@@ -1126,11 +1092,14 @@ function AppInner() {
       {loading ? (
         <View style={styles.loading}>
           <View style={styles.loadingCard}>
-            <ActivityIndicator color="#ff5a3c" />
+            <ActivityIndicator color={colors.brand} />
             <Text style={styles.loadingText}>{loadingHint}</Text>
           </View>
         </View>
       ) : null}
+      </View>
+
+      <BottomNav active={bottomTab} onChange={onBottomTab} />
 
       <CookMode
         visible={cookOpen && Boolean(recipe)}
@@ -1153,6 +1122,8 @@ function AppInner() {
         }}
       />
 
+      <MobileOnboardingTutorial visible={tutorialOpen} onComplete={dismissTutorial} />
+
       <Modal
         visible={helpOpen}
         animationType="slide"
@@ -1161,7 +1132,7 @@ function AppInner() {
       >
         <SafeAreaView style={styles.groceryWrap} edges={["bottom", "left", "right"]}>
           <View style={styles.groceryCard}>
-            <Text style={styles.panelTitle}>How to test RecipeGuru</Text>
+            <Text style={styles.panelTitle}>How to test Pluck</Text>
             <Text style={styles.groceryHint}>
               1. Try the sample recipe, then Save, This week, Grocery, and Cook.
             </Text>
@@ -1210,7 +1181,7 @@ function AppInner() {
                 setHouseholdSaved(false);
               }}
               placeholder="Unlock code"
-              placeholderTextColor="#8a7b6b"
+              placeholderTextColor={colors.muted}
               autoCapitalize="none"
               autoCorrect={false}
             />
@@ -1253,7 +1224,7 @@ function AppInner() {
                 value={groceryDraft}
                 onChangeText={setGroceryDraft}
                 placeholder="Milk, 2 limes, olive oil…"
-                placeholderTextColor="#8a7b6b"
+                placeholderTextColor={colors.muted}
                 returnKeyType="done"
                 onSubmitEditing={() => void handleAddGroceryLine()}
               />
@@ -1603,6 +1574,9 @@ function CookMode({
             </Pressable>
           ))}
           <ScrollView contentContainerStyle={styles.cookStage}>
+            {recipe.image ? (
+              <Image source={{ uri: recipe.image }} style={styles.cookPhoto} />
+            ) : null}
             <TimedText text={step} onStart={onStartTimer} large />
             {showIngredients
               ? (
@@ -1649,6 +1623,8 @@ function Check({ checked }: { checked: boolean }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0e1519" },
+  body: { flex: 1 },
+  homeLibrary: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, gap: 12 },
   topbar: {
     flexDirection: "row",
     alignItems: "center",
@@ -1658,20 +1634,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "rgba(247,243,235,0.1)",
   },
-  topActions: { flexDirection: "row", gap: 8 },
-  brand: { flexDirection: "row", alignItems: "center", gap: 10 },
+  brandName: { flex: 1, marginRight: 12 },
+  brand: { flexDirection: "row", alignItems: "center", gap: 12 },
   brandMark: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: "#0E1519",
   },
-  brandMarkText: { color: "#fff8f5", fontWeight: "800" },
-  brandText: { color: "#f7f3eb", fontWeight: "700", fontSize: 17 },
+  brandMarkText: { color: colors.surface, fontWeight: "800" },
+  brandText: {
+    color: "#85B8FF",
+    fontWeight: "700",
+    fontSize: 32,
+    fontFamily: fonts.display,
+    letterSpacing: -0.6,
+  },
   hero: { padding: 20, paddingBottom: 48, gap: 12 },
-  eyebrow: { color: "#5ec8b6", letterSpacing: 2.2, textTransform: "uppercase", fontSize: 12, fontWeight: "600" },
+  newHomeScroll: { paddingBottom: 16 },
+  eyebrow: { color: colors.gold, letterSpacing: 2.2, textTransform: "uppercase", fontSize: 12, fontWeight: "600" },
   title: { color: "#f7f3eb", fontSize: 36, fontWeight: "700" },
-  titleEm: { color: "#e8b86d", fontSize: 32, fontStyle: "italic" },
+  titleEm: { color: colors.gold, fontSize: 32, fontStyle: "italic" },
   composer: {
     backgroundColor: "#172126",
     borderColor: "rgba(247,243,235,0.1)",
@@ -1701,8 +1684,8 @@ const styles = StyleSheet.create({
   },
   captionInput: { minHeight: 140 },
   formRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
-  primary: { backgroundColor: "#ff5a3c", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12 },
-  primaryText: { color: "#fff8f5", fontWeight: "700", textAlign: "center" },
+  primary: { backgroundColor: colors.brand, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12 },
+  primaryText: { color: colors.surface, fontWeight: "700", textAlign: "center" },
   ghost: {
     borderWidth: 1,
     borderColor: "rgba(247,243,235,0.12)",
@@ -1711,7 +1694,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   ghostText: { color: "#f7f3eb", fontWeight: "600" },
-  error: { color: "#ff9b8a" },
+  error: { color: colors.error },
   sectionTitle: { color: "#f7f3eb", fontSize: 22, fontWeight: "700", marginTop: 10 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
@@ -1722,7 +1705,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: "#172126",
   },
-  chipOn: { backgroundColor: "rgba(255,90,60,0.18)", borderColor: "rgba(255,90,60,0.7)" },
+  chipOn: { backgroundColor: colors.brandSoft, borderColor: colors.brandLine },
   chipText: { color: "#f7f3eb" },
   search: {
     borderWidth: 1,
@@ -1768,6 +1751,7 @@ const styles = StyleSheet.create({
   recipe: { padding: 16, paddingBottom: 48, gap: 12 },
   recipeImage: { width: "100%", height: 210, borderRadius: 22, backgroundColor: "#1c2a31" },
   recipeTitle: { color: "#f7f3eb", fontSize: 30, fontWeight: "700" },
+  sourceLink: { color: colors.brand, fontWeight: "700", fontSize: 14 },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   metaChip: {
     borderWidth: 1,
@@ -1786,12 +1770,12 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: "#ff5a3c",
+    borderColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
   },
-  checkOn: { backgroundColor: "#ff5a3c" },
-  checkMark: { color: "#fff8f5", fontWeight: "800", fontSize: 12 },
+  checkOn: { backgroundColor: colors.brand },
+  checkMark: { color: colors.surface, fontWeight: "800", fontSize: 12 },
   checkLabel: { flex: 1, color: "#142018", fontSize: 16 },
   stepCard: { flexDirection: "row", gap: 12, backgroundColor: "#efe8db", borderRadius: 18, padding: 12 },
   stepIndex: {
@@ -1805,7 +1789,7 @@ const styles = StyleSheet.create({
   stepIndexText: { color: "#f7f3eb", fontWeight: "800", fontSize: 18 },
   stepText: { color: "#142018", fontSize: 17, lineHeight: 24 },
   textBtn: { color: "#142018", fontWeight: "700", marginTop: 8 },
-  timerChip: { color: "#ff5a3c", textDecorationLine: "underline", fontWeight: "700" },
+  timerChip: { color: colors.brand, textDecorationLine: "underline", fontWeight: "700" },
   editArea: {
     minHeight: 120,
     borderWidth: 1,
@@ -1835,6 +1819,7 @@ const styles = StyleSheet.create({
   cookBar: { flexDirection: "row", alignItems: "center", gap: 8, padding: 16 },
   cookBarText: { color: "#9aa8a3", flex: 1, textTransform: "uppercase" },
   cookStage: { padding: 20, gap: 12 },
+  cookPhoto: { width: "100%", height: 240, borderRadius: 22, backgroundColor: "#1c2a31" },
   cookStep: { color: "#fff8ef", fontSize: 32, lineHeight: 40, fontWeight: "700" },
   cookNav: { flexDirection: "row", gap: 10, padding: 16 },
   cookNavBtn: { flex: 1, alignItems: "center", minHeight: 52, justifyContent: "center" },
@@ -1881,7 +1866,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 12,
   },
-  groceryAssignOn: { backgroundColor: "rgba(255,90,60,0.12)" },
+  groceryAssignOn: { backgroundColor: colors.brandSoft },
   groceryGroupTitle: {
     color: "#5c6a62",
     fontSize: 12,
@@ -1918,7 +1903,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 16,
     right: 16,
-    bottom: 24,
+    bottom: 88,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",

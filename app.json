@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "RecipeGuru",
+    "name": "Pluck",
     "slug": "recipe-extract",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./mobile/assets/icon.png",
+    "icon": "./mobile/assets/owl-logo.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./mobile/assets/splash-icon.png",
+      "image": "./mobile/assets/owl-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#0E1519"
     },
@@ -23,9 +23,9 @@
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#0E1519",
-        "foregroundImage": "./mobile/assets/android-icon-foreground.png",
+        "foregroundImage": "./mobile/assets/owl-logo.png",
         "backgroundImage": "./mobile/assets/android-icon-background.png",
-        "monochromeImage": "./mobile/assets/android-icon-monochrome.png"
+        "monochromeImage": "./mobile/assets/owl-logo.png"
       },
       "predictiveBackGestureEnabled": false,
       "intentFilters": [
@@ -51,7 +51,7 @@
       ]
     },
     "web": {
-      "favicon": "./mobile/assets/favicon.png"
+      "favicon": "./mobile/assets/owl-logo.png"
     },
     "plugins": ["expo-sharing"],
     "extra": {

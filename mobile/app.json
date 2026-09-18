@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "RecipeGuru",
+    "name": "Pluck",
     "slug": "recipe-extract",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/owl-logo.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/owl-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#0E1519"
     },
@@ -19,14 +19,14 @@
     },
     "android": {
       "package": "com.recipeextract.app",
-      "versionCode": 7,
+      "versionCode": 8,
       "usesCleartextTraffic": false,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#0E1519",
-        "foregroundImage": "./assets/android-icon-foreground.png",
+        "foregroundImage": "./assets/owl-logo.png",
         "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "monochromeImage": "./assets/owl-logo.png"
       },
       "predictiveBackGestureEnabled": false,
       "intentFilters": [
@@ -61,20 +61,23 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/owl-logo.png"
     },
     "plugins": [
       [
         "expo-share-intent",
         {
-          "androidIntentFilters": ["text/*"],
+          "androidIntentFilters": [
+            "text/*"
+          ],
           "iosActivationRules": {
             "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
             "NSExtensionActivationSupportsText": true
           }
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-font"
     ],
     "extra": {
       "eas": {

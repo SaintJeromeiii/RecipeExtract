@@ -1,17 +1,17 @@
-RecipeGuru Play Console listing
+Pluck Play Console listing
 Package: com.recipeextract.app
-Version to upload: 1.0.6 (versionCode 7)
+Version to upload: 1.0.7 (versionCode 8)
 
 Short description (80 chars max):
 Clip recipe URLs and captions. Cook, plan the week, and shop from one list.
 
 Full description:
-RecipeGuru turns a recipe link or social caption into a clean recipe you can cook from.
+Pluck turns a recipe link or social caption into a clean recipe you can cook from.
 
-Paste a blog URL, TikTok, or Instagram caption. RecipeGuru keeps the title, ingredients, and steps — not the blog filler. Save recipes on your phone, add them to this week, and build a grocery list by aisle.
+Paste a blog URL, TikTok, or Instagram caption. Pluck keeps the title, ingredients, and steps — not the blog filler. Save recipes on your phone, add them to this week, and build a grocery list by aisle.
 
 • Clip from a URL or pasted caption
-• Share a link into RecipeGuru from other apps
+• Share a link into Pluck from other apps
 • Save a private recipe library on your device
 • Plan weekly meals and auto-add grocery items
 • Cook mode with step timers and a stay-awake screen
@@ -32,7 +32,7 @@ Help → Report a problem in the app
 https://github.com/SaintJeromeiii/legal-pages/issues
 
 Play Console setup for wide testing:
-1. Create the app if needed (name RecipeGuru, default language English).
+1. Create the app if needed (name Pluck, default language English).
 2. Set privacy policy URL above.
 3. App content: not for children, no ads, no in-app purchases for this test build.
 4. Data safety: no collected user data stored on our servers except URLs/captions sent to extract a recipe. No sharing for advertising.
@@ -41,4 +41,4 @@ Play Console setup for wide testing:
 
 Build the Play bundle from the repo:
 cd mobile && npm run aab
-Output: mobile/dist/RecipeGuru.aab
+Output: mobile/dist/Pluck.aab

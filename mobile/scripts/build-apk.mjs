@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 const mobileDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const androidDir = path.join(mobileDir, "android");
 const distDir = path.join(mobileDir, "dist");
-const apkDest = path.join(distDir, "RecipeGuru.apk");
-const aabDest = path.join(distDir, "RecipeGuru.aab");
+const apkDest = path.join(distDir, "Pluck.apk");
+const aabDest = path.join(distDir, "Pluck.aab");
 const apiUrl =
   process.env.EXPO_PUBLIC_API_URL ||
   "https://recipeextract-production.up.railway.app";
@@ -89,7 +89,7 @@ MYAPP_UPLOAD_KEY_PASSWORD=${keystore.keyPassword}
 `;
   fs.writeFileSync(gradlePath, `${gradle.trimEnd()}\n`);
   patchAppBuildGradle();
-  console.log("Signing with the RecipeGuru release keystore.");
+  console.log("Signing with the Pluck release keystore.");
   return true;
 }
 
@@ -155,7 +155,7 @@ if (!fs.existsSync(path.join(sdkHome, "platform-tools"))) {
   process.exit(1);
 }
 
-console.log(wantAab ? "RecipeGuru Play Store AAB" : "RecipeGuru local APK");
+console.log(wantAab ? "Pluck Play Store AAB" : "Pluck local APK");
 console.log(`API: ${apiUrl}`);
 run("npx", ["expo", "prebuild", "--platform", "android", "--non-interactive"]);
 applyReleaseSigning();
@@ -195,7 +195,7 @@ if (wantInstall) {
     });
     if (result.status !== 0) {
       console.log(
-        `Could not replace the existing app on ${serial} (different signature). Uninstall RecipeGuru once on that phone, then run: npm run apk:install`,
+        `Could not replace the existing app on ${serial} (different signature). Uninstall Pluck once on that phone, then run: npm run apk:install`,
       );
     }
   }

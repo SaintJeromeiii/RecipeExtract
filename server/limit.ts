@@ -68,7 +68,7 @@ export function checkExtractLimit(ip: string): string | null {
     return "This device has hit the hourly clip limit. Paste the caption, or try again later.";
   }
   if (inFlight >= MAX_IN_FLIGHT) {
-    return "RecipeGuru is busy reading other posts. Try again in a moment, or paste the caption.";
+    return "Pluck is busy reading other posts. Try again in a moment, or paste the caption.";
   }
   bucket.hits.push(now);
   perIp.set(ip, bucket);

@@ -129,7 +129,7 @@ app.post("/api/extract-text", async (req, res) => {
 if (process.env.NODE_ENV === "production") {
   const closed = (_req: express.Request, res: express.Response) => {
     res.status(410).json({
-      error: "Saved recipes stay on your device now. Use the RecipeGuru app or this page in the same browser.",
+      error: "Saved recipes stay on your device now. Use the Pluck app or this page in the same browser.",
     });
   };
   app.use("/api/recipes", closed);
@@ -314,7 +314,7 @@ function lanAddresses(): string[] {
 }
 
 app.listen(port, "0.0.0.0", () => {
-  console.log(`RecipeGuru API on http://127.0.0.1:${port}`);
+  console.log(`Pluck API on http://127.0.0.1:${port}`);
   for (const address of lanAddresses()) {
     console.log(`Phone / Expo:     http://${address}:${port}`);
   }
