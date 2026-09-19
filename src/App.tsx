@@ -45,6 +45,7 @@ import type {
   Recipe,
   RecipeCategory,
   SavedRecipe,
+  Weekday,
   WeeklyMeal,
 } from "./types";
 
@@ -53,6 +54,7 @@ type LibraryFilter = "all" | "favorites" | RecipeCategory;
 type View = "home" | "recipe";
 
 const HOUSEHOLD_KEY_STORAGE = "recipeextract.household-key";
+const WEEKDAY_PLAN_KEY = "recipeextract.weekly-days.v1";
 
 function webExtractHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -106,6 +108,7 @@ export default function App() {
   const [removedRecipe, setRemovedRecipe] = useState<SavedRecipe | null>(null);
   const [householdKey, setHouseholdKey] = useState("");
   const [householdSaved, setHouseholdSaved] = useState(false);
+  const [assignWeekdays, setAssignWeekdays] = useState(true);
   const timers = useCookTimers();
   useWakeLock(cookOpen);
 
@@ -124,6 +127,7 @@ export default function App() {
   useEffect(() => {
     try {
       setHouseholdKey(localStorage.getItem(HOUSEHOLD_KEY_STORAGE) || "");
+      if (localStorage.getItem(WEEKDAY_PLAN_KEY) === "0") setAssignWeekdays(false);
     } catch {
       // Private mode / blocked storage.
     }
@@ -350,6 +354,12 @@ export default function App() {
     setLibraryBusy(true);
     setError(null);
     try {
+      const existing = weekly.find((meal) => meal.recipeId === target.id);
+      if (existing) {
+        await removeWeeklyMeal(existing.id);
+        setWeekly((current) => current.filter((meal) => meal.id !== existing.id));
+        return;
+      }
       const result = await addWeeklyMeal({ recipeId: target.id });
       upsertWeekly(result.meal);
       setGrocery(result.grocery);
@@ -363,6 +373,7 @@ export default function App() {
   async function handleAddWeeklyCustom(input: {
     title: string;
     ingredients: string[];
+    weekday?: Weekday | null;
   }) {
     setLibraryBusy(true);
     setError(null);
@@ -384,6 +395,12 @@ export default function App() {
     try {
       const saved = savedMatch ?? (await saveRecipe(recipe));
       if (!savedMatch) upsertSaved(saved);
+      const existing = weekly.find((meal) => meal.recipeId === saved.id);
+      if (existing) {
+        await removeWeeklyMeal(existing.id);
+        setWeekly((current) => current.filter((meal) => meal.id !== existing.id));
+        return;
+      }
       const result = await addWeeklyMeal({ recipeId: saved.id });
       upsertWeekly(result.meal);
       setGrocery(result.grocery);
@@ -406,6 +423,14 @@ export default function App() {
   async function handleToggleWeekly(meal: WeeklyMeal, checked: boolean) {
     try {
       upsertWeekly(await updateWeeklyMeal(meal.id, { checked }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update that meal.");
+    }
+  }
+
+  async function handleSetWeeklyDay(meal: WeeklyMeal, weekday: Weekday | null) {
+    try {
+      upsertWeekly(await updateWeeklyMeal(meal.id, { weekday }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update that meal.");
     }
@@ -777,6 +802,16 @@ export default function App() {
             onAddRecipe={(recipe) => void handleAddWeeklyRecipe(recipe)}
             onRemove={(meal) => void handleRemoveWeekly(meal)}
             onToggle={(meal, checked) => void handleToggleWeekly(meal, checked)}
+            onSetDay={(meal, weekday) => void handleSetWeeklyDay(meal, weekday)}
+            assignWeekdays={assignWeekdays}
+            onAssignWeekdays={(next) => {
+              setAssignWeekdays(next);
+              try {
+                localStorage.setItem(WEEKDAY_PLAN_KEY, next ? "1" : "0");
+              } catch {
+                // Private mode / blocked storage.
+              }
+            }}
             onOpen={openSaved}
             onClear={() => void handleClearWeekly()}
           />

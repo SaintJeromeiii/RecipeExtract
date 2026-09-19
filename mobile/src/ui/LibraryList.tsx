@@ -3,6 +3,7 @@ import { View, Text, Image, Pressable, TextInput } from "react-native";
 import Card from "./Card";
 import Button from "./Button";
 import { colors } from "./tokens";
+import { weekdayLabel } from "../../../shared/weekly";
 
 export default function LibraryList(props: any) {
   const {
@@ -16,10 +17,12 @@ export default function LibraryList(props: any) {
     recipeMatchesCategory,
     matchesQuery,
     handleFavorite,
-    handleAddWeeklyRecipe,
+    handleToggleWeeklyRecipe,
     handleShopRecipe,
     handleRemove,
     weekRecipeIds,
+    weekByRecipe,
+    assignWeekdays,
     setRecipe,
     setUrl,
     setCheckedIngredients,
@@ -65,7 +68,16 @@ export default function LibraryList(props: any) {
             </Pressable>
           </View>
           <View style={[props.styles.libraryActions, { marginTop: 8 }]}> 
-            <Button onPress={() => void handleAddWeeklyRecipe(item)} style={{ marginRight: 8 }}>{weekRecipeIds.has(item.id) ? "On week" : "Week"}</Button>
+            <Button
+              onPress={() => void handleToggleWeeklyRecipe(item)}
+              style={{ marginRight: 8 }}
+            >
+              {weekRecipeIds.has(item.id)
+                ? assignWeekdays && weekByRecipe?.[item.id]
+                  ? `On ${weekdayLabel(weekByRecipe[item.id])}`
+                  : "On week"
+                : "Week"}
+            </Button>
             <Button onPress={() => void handleShopRecipe(item)} style={{ marginRight: 8 }} variant="secondary">Shop</Button>
             <Button onPress={() => handleRemove(item)} variant="secondary">Delete</Button>
           </View>

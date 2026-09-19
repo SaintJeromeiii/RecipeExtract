@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { parseShopLines, sortWeeklyMeals } from "../shared/weekly";
-import type { SavedRecipe, WeeklyMeal } from "./types";
+import { WEEKDAYS, groupWeeklyMeals, parseShopLines, sortWeeklyMeals, weekdayLabel } from "../shared/weekly";
+import type { SavedRecipe, Weekday, WeeklyMeal } from "./types";
 
 export function WeeklyMenu({
   meals,
@@ -10,24 +10,33 @@ export function WeeklyMenu({
   onAddRecipe,
   onRemove,
   onToggle,
+  onSetDay,
+  assignWeekdays,
+  onAssignWeekdays,
   onOpen,
   onClear,
 }: {
   meals: WeeklyMeal[];
   recipes: SavedRecipe[];
   busy: boolean;
-  onAddCustom: (input: { title: string; ingredients: string[] }) => void;
+  onAddCustom: (input: { title: string; ingredients: string[]; weekday?: Weekday | null }) => void;
   onAddRecipe: (recipe: SavedRecipe) => void;
   onRemove: (meal: WeeklyMeal) => void;
   onToggle: (meal: WeeklyMeal, checked: boolean) => void;
+  onSetDay: (meal: WeeklyMeal, weekday: Weekday | null) => void;
+  assignWeekdays: boolean;
+  onAssignWeekdays: (next: boolean) => void;
   onOpen: (recipe: SavedRecipe) => void;
   onClear: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [shop, setShop] = useState("");
   const [pickId, setPickId] = useState("");
+  const [newDay, setNewDay] = useState<Weekday | null>(null);
   const recipeById = new Map(recipes.map((item) => [item.id, item]));
-  const listed = sortWeeklyMeals(meals);
+  const groups = assignWeekdays
+    ? groupWeeklyMeals(meals)
+    : [{ key: "all", label: "", meals: sortWeeklyMeals(meals) }];
 
   function submitCustom() {
     const trimmed = title.trim();
@@ -35,6 +44,7 @@ export function WeeklyMenu({
     onAddCustom({
       title: trimmed,
       ingredients: parseShopLines(shop),
+      weekday: assignWeekdays ? newDay : null,
     });
     setTitle("");
     setShop("");
@@ -59,6 +69,15 @@ export function WeeklyMenu({
             Add clipped recipes or easy meals that don’t need a recipe. Anything you add
             goes on the grocery list.
           </p>
+          <label className="mt-4 flex items-center gap-3 text-sm text-olive">
+            <input
+              type="checkbox"
+              checked={assignWeekdays}
+              onChange={(event) => onAssignWeekdays(event.target.checked)}
+              className="h-4 w-4 accent-olive"
+            />
+            Assign days — pick a weekday when you add a meal
+          </label>
         </div>
         {meals.length ? (
           <button
@@ -108,6 +127,19 @@ export function WeeklyMenu({
           Add meal
         </button>
       </div>
+      {assignWeekdays ? (
+      <div className="mb-6 flex flex-wrap gap-2">
+        <DayChip label="Anytime" on={newDay === null} onClick={() => setNewDay(null)} />
+        {WEEKDAYS.map((day) => (
+          <DayChip
+            key={day}
+            label={weekdayLabel(day)}
+            on={newDay === day}
+            onClick={() => setNewDay(day)}
+          />
+        ))}
+      </div>
+      ) : null}
 
       {recipes.length ? (
         <div className="mb-6 flex flex-wrap items-end gap-3">
@@ -139,60 +171,116 @@ export function WeeklyMenu({
         </div>
       ) : null}
 
-      {listed.length === 0 ? (
+      {meals.length === 0 ? (
         <p className="font-display text-xl italic text-olive/65">
           Nothing planned yet. Add grilled cheese, leftover night, or a clipped recipe.
         </p>
       ) : (
-        <ul className="space-y-2">
-          {listed.map((meal) => {
-            const linked = meal.recipeId ? recipeById.get(meal.recipeId) : undefined;
-            return (
-              <li
-                key={meal.id}
-                className="flex items-center gap-3 rounded-2xl border border-olive/10 bg-ivory px-4 py-3"
-              >
-                <input
-                  type="checkbox"
-                  checked={meal.checked}
-                  onChange={(event) => onToggle(meal, event.target.checked)}
-                  className="h-4 w-4 shrink-0 accent-olive"
-                  aria-label={`Mark ${meal.title} done`}
-                />
-                <div className="min-w-0 flex-1">
-                  {linked ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpen(linked)}
-                      className={`border-0 bg-transparent p-0 text-left font-display text-xl ${
-                        meal.checked ? "text-olive/50 line-through" : "text-espresso"
-                      }`}
+        <div className="space-y-6">
+          {groups.map((group) => (
+            <div key={group.key}>
+              {group.label ? (
+              <h3 className="mb-2 text-[0.72rem] font-medium tracking-[0.16em] uppercase text-olive/70">
+                {group.label}
+              </h3>
+              ) : null}
+              <ul className="space-y-2">
+                {group.meals.map((meal) => {
+                  const linked = meal.recipeId ? recipeById.get(meal.recipeId) : undefined;
+                  return (
+                    <li
+                      key={meal.id}
+                      className="flex flex-wrap items-center gap-3 rounded-2xl border border-olive/10 bg-ivory px-4 py-3"
                     >
-                      {meal.title}
-                    </button>
-                  ) : (
-                    <p
-                      className={`font-display text-xl ${
-                        meal.checked ? "text-olive/50 line-through" : "text-espresso"
-                      }`}
-                    >
-                      {meal.title}
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onRemove(meal)}
-                  disabled={busy}
-                  className="shrink-0 rounded-full border-0 bg-transparent px-2 py-1 text-xs uppercase tracking-wide text-terracotta"
-                >
-                  Remove
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                      <input
+                        type="checkbox"
+                        checked={meal.checked}
+                        onChange={(event) => onToggle(meal, event.target.checked)}
+                        className="h-4 w-4 shrink-0 accent-olive"
+                        aria-label={`Mark ${meal.title} done`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        {linked ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpen(linked)}
+                            className={`border-0 bg-transparent p-0 text-left font-display text-xl ${
+                              meal.checked ? "text-olive/50 line-through" : "text-espresso"
+                            }`}
+                          >
+                            {meal.title}
+                          </button>
+                        ) : (
+                          <p
+                            className={`font-display text-xl ${
+                              meal.checked ? "text-olive/50 line-through" : "text-espresso"
+                            }`}
+                          >
+                            {meal.title}
+                          </p>
+                        )}
+                        {assignWeekdays ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <DayChip
+                            label="Any"
+                            on={meal.weekday == null}
+                            onClick={() => onSetDay(meal, null)}
+                            compact
+                          />
+                          {WEEKDAYS.map((day) => (
+                            <DayChip
+                              key={day}
+                              label={weekdayLabel(day)}
+                              on={meal.weekday === day}
+                              onClick={() => onSetDay(meal, day)}
+                              compact
+                            />
+                          ))}
+                        </div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onRemove(meal)}
+                        disabled={busy}
+                        className="shrink-0 rounded-full border-0 bg-transparent px-2 py-1 text-xs uppercase tracking-wide text-terracotta"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
       )}
     </section>
+  );
+}
+
+function DayChip({
+  label,
+  on,
+  onClick,
+  compact,
+}: {
+  label: string;
+  on: boolean;
+  onClick: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border ${
+        compact ? "px-2 py-0.5 text-[0.65rem]" : "px-3 py-1 text-[0.72rem]"
+      } tracking-[0.08em] uppercase ${
+        on ? "border-olive/40 bg-olive text-ivory" : "border-olive/20 bg-ivory text-olive"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

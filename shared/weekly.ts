@@ -70,13 +70,22 @@ export function groupWeeklyMeals(meals: WeeklyMeal[]): Array<{
   label: string;
   meals: WeeklyMeal[];
 }> {
-  const groups = new Map<string, { key: string; label: string; meals: WeeklyMeal[] }>();
-  for (const meal of sortWeeklyMeals(meals)) {
+  const buckets = new Map<string, WeeklyMeal[]>();
+  for (const meal of meals) {
     const key = meal.weekday ?? "any";
-    const label = meal.weekday ? weekdayLong(meal.weekday) : "Anytime this week";
-    const existing = groups.get(key);
-    if (existing) existing.meals.push(meal);
-    else groups.set(key, { key, label, meals: [meal] });
+    const list = buckets.get(key);
+    if (list) list.push(meal);
+    else buckets.set(key, [meal]);
   }
-  return [...groups.values()];
+  return [...WEEKDAYS, "any"].flatMap((key) => {
+    const items = buckets.get(key);
+    if (!items?.length) return [];
+    return [
+      {
+        key,
+        label: isWeekday(key) ? weekdayLong(key) : "Anytime this week",
+        meals: sortWeeklyMeals(items),
+      },
+    ];
+  });
 }

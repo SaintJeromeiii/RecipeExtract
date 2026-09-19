@@ -31,7 +31,7 @@ import { firstHttpUrl, isSocialUrl } from "../shared/social";
 import { canOpenSource } from "../shared/recipeSource";
 import { SAMPLE_RECIPE } from "../shared/recipeQuality";
 import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingredients";
-import { sortWeeklyMeals } from "../shared/weekly";
+import { sortWeeklyMeals, weekdayLabel } from "../shared/weekly";
 import {
   groceryCategoryLabel,
   groupGroceryItems,
@@ -83,6 +83,7 @@ import type {
   RecipeCategory,
   SavedRecipe,
   TimerMatch,
+  Weekday,
   WeeklyMeal,
 } from "./src/types";
 import ModernHome from "./src/ui/ModernHome";
@@ -91,6 +92,8 @@ import WeeklyList from "./src/ui/WeeklyList";
 import LibraryList from "./src/ui/LibraryList";
 import BottomNav, { type BottomTab } from "./src/ui/BottomNav";
 import MobileOnboardingTutorial from "./src/ui/MobileOnboardingTutorial";
+import WeekdayPicker from "./src/ui/WeekdayPicker";
+import WeekdayPlanToggle from "./src/ui/WeekdayPlanToggle";
 import { colors, fonts } from "./src/ui/tokens";
 
 const PREVIEW_NEW_HOME = true;
@@ -115,6 +118,7 @@ function urlFromLink(link: string): string | null {
 }
 
 const ONBOARD_KEY = "recipeextract.onboarded.v1";
+const WEEKDAY_PLAN_KEY = "recipeextract.weekly-days.v1";
 const extraUrls = Constants.expoConfig?.extra as
   | { privacyUrl?: string; testersUrl?: string }
   | undefined;
@@ -156,6 +160,8 @@ function AppInner() {
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [weekly, setWeekly] = useState<WeeklyMeal[]>([]);
   const [weeklyTitle, setWeeklyTitle] = useState("");
+  const [weekPick, setWeekPick] = useState<SavedRecipe | null>(null);
+  const [assignWeekdays, setAssignWeekdays] = useState(true);
   const [grocery, setGrocery] = useState<GroceryItem[]>([]);
   const [categoryOrder, setCategoryOrder] = useState<GroceryCategory[]>(() =>
     resolveCategoryOrder(),
@@ -228,6 +234,10 @@ function AppInner() {
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (weekPick) {
+        setWeekPick(null);
+        return true;
+      }
       if (tutorialOpen) {
         setTutorialOpen(false);
         void AsyncStorage.setItem(ONBOARD_KEY, "1");
@@ -257,7 +267,7 @@ function AppInner() {
       return false;
     });
     return () => sub.remove();
-  }, [assigningItem, cookOpen, groceryOpen, helpOpen, tutorialOpen, view]);
+  }, [assigningItem, cookOpen, groceryOpen, helpOpen, tutorialOpen, view, weekPick]);
 
   async function extract(nextUrl = url) {
     const trimmed = nextUrl.trim();
@@ -349,6 +359,9 @@ function AppInner() {
   useEffect(() => {
     void AsyncStorage.getItem(ONBOARD_KEY).then((value) => {
       if (!value) setTutorialOpen(true);
+    });
+    void AsyncStorage.getItem(WEEKDAY_PLAN_KEY).then((value) => {
+      if (value === "0") setAssignWeekdays(false);
     });
   }, []);
 
@@ -484,11 +497,36 @@ function AppInner() {
     );
   }
 
-  async function handleAddWeeklyRecipe(target: SavedRecipe) {
+  async function handleAddWeeklyRecipe(target: SavedRecipe, weekday: Weekday | null = null) {
     setError(null);
-    const result = await addWeeklyMeal({ recipeId: target.id });
+    const result = await addWeeklyMeal({ recipeId: target.id, weekday });
     upsertWeekly(result.meal);
     setGrocery(result.grocery);
+  }
+
+  async function handleRemoveWeeklyRecipe(target: SavedRecipe) {
+    const meals = weekly.filter((meal) => meal.recipeId === target.id);
+    for (const meal of meals) {
+      await removeWeeklyMeal(meal.id);
+    }
+    setWeekly((current) => current.filter((meal) => meal.recipeId !== target.id));
+  }
+
+  async function handleToggleWeeklyRecipe(target: SavedRecipe) {
+    if (weekly.some((meal) => meal.recipeId === target.id)) {
+      await handleRemoveWeeklyRecipe(target);
+      return;
+    }
+    if (assignWeekdays) {
+      setWeekPick(target);
+      return;
+    }
+    await handleAddWeeklyRecipe(target, null);
+  }
+
+  function handleAssignWeekdays(next: boolean) {
+    setAssignWeekdays(next);
+    void AsyncStorage.setItem(WEEKDAY_PLAN_KEY, next ? "1" : "0");
   }
 
   async function handlePasteCapture() {
@@ -511,12 +549,13 @@ function AppInner() {
     setError(null);
   }
 
-  async function handleAddWeeklyCustom() {
+  async function handleAddWeeklyCustom(weekday: Weekday | null = null) {
     const trimmed = weeklyTitle.trim();
     if (!trimmed) return;
     setError(null);
     const result = await addWeeklyMeal({
       title: trimmed,
+      weekday,
     });
     upsertWeekly(result.meal);
     setGrocery(result.grocery);
@@ -527,7 +566,15 @@ function AppInner() {
     if (!recipe) return;
     const saved = savedMatch ?? (await saveRecipe(recipe));
     if (!savedMatch) upsertSaved(saved);
-    await handleAddWeeklyRecipe(saved);
+    if (weekly.some((meal) => meal.recipeId === saved.id)) {
+      await handleRemoveWeeklyRecipe(saved);
+      return;
+    }
+    if (assignWeekdays) {
+      setWeekPick(saved);
+      return;
+    }
+    await handleAddWeeklyRecipe(saved, null);
   }
 
   async function handleRemoveWeekly(meal: WeeklyMeal) {
@@ -539,10 +586,21 @@ function AppInner() {
     upsertWeekly(await updateWeeklyMeal(meal.id, { checked }));
   }
 
+  async function handleSetWeeklyDay(meal: WeeklyMeal, weekday: Weekday | null) {
+    upsertWeekly(await updateWeeklyMeal(meal.id, { weekday }));
+  }
+
   const weekRecipeIds = useMemo(
     () => new Set(weekly.map((meal) => meal.recipeId).filter((id): id is string => Boolean(id))),
     [weekly],
   );
+  const weekByRecipe = useMemo(() => {
+    const map: Record<string, Weekday | null> = {};
+    for (const meal of weekly) {
+      if (meal.recipeId && !(meal.recipeId in map)) map[meal.recipeId] = meal.weekday;
+    }
+    return map;
+  }, [weekly]);
 
   async function handleShopRecipe(target: SavedRecipe) {
     if (!target.ingredients.length) {
@@ -795,7 +853,9 @@ function AppInner() {
               recipeMatchesCategory={recipeMatchesCategory}
               matchesQuery={matchesQuery}
               handleFavorite={handleFavorite}
-              handleAddWeeklyRecipe={handleAddWeeklyRecipe}
+              handleToggleWeeklyRecipe={handleToggleWeeklyRecipe}
+              weekByRecipe={weekByRecipe}
+              assignWeekdays={assignWeekdays}
               handleShopRecipe={handleShopRecipe}
               handleRemove={handleRemove}
               weekRecipeIds={weekRecipeIds}
@@ -824,7 +884,9 @@ function AppInner() {
             recipeMatchesCategory={recipeMatchesCategory}
             matchesQuery={matchesQuery}
             handleFavorite={handleFavorite}
-            handleAddWeeklyRecipe={handleAddWeeklyRecipe}
+            handleToggleWeeklyRecipe={handleToggleWeeklyRecipe}
+            weekByRecipe={weekByRecipe}
+            assignWeekdays={assignWeekdays}
             handleShopRecipe={handleShopRecipe}
             handleRemove={handleRemove}
             weekRecipeIds={weekRecipeIds}
@@ -848,6 +910,9 @@ function AppInner() {
             handleAddWeeklyCustom={handleAddWeeklyCustom}
             handleToggleWeekly={handleToggleWeekly}
             handleRemoveWeekly={handleRemoveWeekly}
+            handleSetWeeklyDay={handleSetWeeklyDay}
+            assignWeekdays={assignWeekdays}
+            onAssignWeekdays={handleAssignWeekdays}
             clearWeeklyMeals={clearWeeklyMeals}
             savedRecipes={savedRecipes}
             setRecipe={setRecipe}
@@ -916,7 +981,11 @@ function AppInner() {
             </Pressable>
             <Pressable style={styles.ghost} onPress={() => void handleWeeklyFromRecipe()}>
               <Text style={styles.ghostText}>
-                {savedMatch && weekRecipeIds.has(savedMatch.id) ? "On this week" : "This week"}
+                {savedMatch && weekRecipeIds.has(savedMatch.id)
+                  ? assignWeekdays && weekByRecipe[savedMatch.id]
+                    ? `On ${weekdayLabel(weekByRecipe[savedMatch.id]!)}`
+                    : "On this week"
+                  : "This week"}
               </Text>
             </Pressable>
             {savedMatch ? (
@@ -1124,6 +1193,17 @@ function AppInner() {
 
       <MobileOnboardingTutorial visible={tutorialOpen} onComplete={dismissTutorial} />
 
+      <WeekdayPicker
+        visible={Boolean(weekPick)}
+        title={weekPick?.title ?? ""}
+        onClose={() => setWeekPick(null)}
+        onPick={(day) => {
+          const target = weekPick;
+          setWeekPick(null);
+          if (target) void handleAddWeeklyRecipe(target, day);
+        }}
+      />
+
       <Modal
         visible={helpOpen}
         animationType="slide"
@@ -1146,6 +1226,11 @@ function AppInner() {
             <Text style={styles.groceryHint}>
               4. Recipes stay on this phone. Export a backup before you uninstall.
             </Text>
+            <WeekdayPlanToggle
+              value={assignWeekdays}
+              onChange={handleAssignWeekdays}
+              tone="light"
+            />
             <Pressable style={styles.primary} onPress={() => void openSample()}>
               <Text style={styles.primaryText}>Try a sample recipe</Text>
             </Pressable>
