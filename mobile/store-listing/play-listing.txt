@@ -1,6 +1,6 @@
 Pluck Play Console listing
 Package: com.recipeextract.app
-Version to upload: 1.0.7 (versionCode 8)
+Version to upload: 1.0.10 (versionCode 11)
 
 Short description (80 chars max):
 Clip recipe URLs and captions. Cook, plan the week, and shop from one list.

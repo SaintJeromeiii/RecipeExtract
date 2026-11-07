@@ -42,8 +42,8 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
   },
-  title: { color: colors.chromeText, fontSize: 28, fontWeight: "800" },
-  body: { color: "#c4b8a8", fontSize: 16, lineHeight: 24 },
+  title: { color: colors.text, fontSize: 28, fontWeight: "800" },
+  body: { color: colors.muted, fontSize: 16, lineHeight: 24 },
   detail: { color: colors.error, fontSize: 13 },
   btn: {
     alignSelf: "flex-start",

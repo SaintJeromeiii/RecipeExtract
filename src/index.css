@@ -607,6 +607,38 @@ a {
   flex-shrink: 0;
 }
 
+.grocery-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.grocery-qty button {
+  min-width: 1.7rem;
+  border: 1px solid rgba(20, 32, 24, 0.14);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 0.45rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.grocery-qty button:disabled {
+  opacity: 0.4;
+}
+
+.grocery-qty-input {
+  width: 2.6rem;
+  border: 1px solid rgba(20, 32, 24, 0.14);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 0.45rem;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.18rem 0.2rem;
+}
+
 .grocery-cat-label {
   display: inline-flex;
 }

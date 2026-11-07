@@ -175,25 +175,53 @@ export function groceryKey(parsed: { name: string; unit: string | null }): strin
   return `${normalizeGroceryName(parsed.name)}|${groceryUnitKey(parsed.unit)}`;
 }
 
+export function clampGroceryAmount(amount: number): number {
+  if (!Number.isFinite(amount)) return 1;
+  return Math.max(1, Math.round(amount * 100) / 100);
+}
+
+export function steppedGroceryAmount(current: number | null, delta: number): number {
+  const base = current == null ? 0 : current;
+  return clampGroceryAmount(base + delta);
+}
+
+export function applyGroceryAmount(item: GroceryItem, amount: number | null): GroceryItem {
+  const nextAmount =
+    amount == null || !Number.isFinite(amount) || amount <= 0
+      ? null
+      : clampGroceryAmount(amount);
+  return {
+    ...item,
+    amount: nextAmount,
+    label: formatGroceryLabel({ ...item, amount: nextAmount }),
+  };
+}
+
 export function formatGroceryLabel(item: {
   amount: number | null;
   unit: string | null;
   name: string;
   raw?: string;
 }): string {
-  const name = normalizeGroceryName(item.name) || item.name;
-  if (item.amount == null) return item.raw || name;
+  const name = sentenceGroceryName(normalizeGroceryName(item.name) || item.name);
+  if (item.amount == null) return name;
   const unit = pluralizeUnit(item.amount, item.unit);
   const displayName =
     !unit && Math.abs(item.amount - 1) >= 0.02
       ? name
           .split(" ")
           .map((part, index, parts) =>
-            index === parts.length - 1 ? pluralizeWord(part) : part,
+            index === parts.length - 1 ? pluralizeWord(part.toLowerCase()) : part,
           )
           .join(" ")
       : name;
   return [formatAmount(item.amount), unit, displayName].filter(Boolean).join(" ");
+}
+
+function sentenceGroceryName(name: string): string {
+  const cleaned = name.replace(/\s+/g, " ").trim();
+  if (!cleaned) return name;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 function pluralizeUnit(amount: number, unit: string | null): string | null {

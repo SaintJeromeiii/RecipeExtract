@@ -5,6 +5,7 @@ import {
   normalizeRecipeCategories,
 } from "./recipeCategories";
 import {
+  applyGroceryAmount,
   compactGroceryList,
   formatGroceryLabel,
   groceryKey,
@@ -12,6 +13,7 @@ import {
   normalizeGroceryName,
   parseIngredient,
 } from "./ingredients";
+import { isRecipeJunkLine } from "./captionRecipe";
 import { hydrateWeeklyMeal, isWeekday, sortWeeklyMeals } from "./weekly";
 import type {
   GroceryCategory,
@@ -274,6 +276,14 @@ export function createKitchenStore(storage: KitchenStorage) {
       const parsed = parseIngredient(line);
       if (!parsed.name) continue;
       parsed.name = normalizeGroceryName(parsed.name);
+      if (
+        !parsed.name ||
+        isRecipeJunkLine(line) ||
+        isRecipeJunkLine(parsed.name) ||
+        parsed.name.split(" ").length > 10
+      ) {
+        continue;
+      }
       const key = groceryKey(parsed);
       const existing = store.grocery.find((item) => item.key === key && !item.checked);
       if (existing) {
@@ -306,12 +316,16 @@ export function createKitchenStore(storage: KitchenStorage) {
 
   async function patchGroceryItem(
     id: string,
-    patch: { checked?: boolean; category?: GroceryCategory },
+    patch: { checked?: boolean; category?: GroceryCategory; amount?: number | null },
   ): Promise<GroceryItem> {
     const store = await loadStore();
     const current = store.grocery.find((item) => item.id === id);
     if (!current) throw new Error("That grocery item was not found.");
-    const next = { ...current, ...patch };
+    const { amount, ...rest } = patch;
+    const next =
+      amount === undefined
+        ? { ...current, ...rest }
+        : applyGroceryAmount({ ...current, ...rest }, amount);
     store.grocery = store.grocery.map((item) => (item.id === id ? next : item));
     await persist(store);
     return next;
@@ -326,6 +340,10 @@ export function createKitchenStore(storage: KitchenStorage) {
     category: GroceryCategory,
   ): Promise<GroceryItem> {
     return patchGroceryItem(id, { category });
+  }
+
+  async function setGroceryAmount(id: string, amount: number): Promise<GroceryItem> {
+    return patchGroceryItem(id, { amount });
   }
 
   async function removeGroceryItem(id: string): Promise<void> {
@@ -511,6 +529,7 @@ export function createKitchenStore(storage: KitchenStorage) {
     addGroceryLines,
     setGroceryChecked,
     setGroceryCategory,
+    setGroceryAmount,
     removeGroceryItem,
     clearCheckedGrocery,
     clearAllGrocery,

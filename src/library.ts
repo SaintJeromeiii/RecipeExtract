@@ -23,6 +23,7 @@ export const listGrocery = kitchen.listGrocery;
 export const addGrocery = kitchen.addGroceryLines;
 export const setGroceryItemChecked = kitchen.setGroceryChecked;
 export const setGroceryItemCategory = kitchen.setGroceryCategory;
+export const setGroceryItemAmount = kitchen.setGroceryAmount;
 export const removeGrocery = kitchen.removeGroceryItem;
 export const clearCheckedGrocery = kitchen.clearCheckedGrocery;
 export const clearAllGrocery = kitchen.clearAllGrocery;

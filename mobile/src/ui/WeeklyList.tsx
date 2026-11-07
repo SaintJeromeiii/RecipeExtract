@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Card from "./Card";
 import Button from "./Button";
 import WeekdayPlanToggle from "./WeekdayPlanToggle";
-import { colors } from "./tokens";
+import { useTheme } from "./Theme";
+import { type, type ThemeColors } from "./tokens";
 import { WEEKDAYS, groupWeeklyMeals, sortWeeklyMeals, weekdayLabel } from "../../../shared/weekly";
 import type { Weekday } from "../types";
 
@@ -23,6 +24,8 @@ export default function WeeklyList(props: any) {
   } = props;
   const [newDay, setNewDay] = useState<Weekday | null>(null);
   const groups = assignWeekdays ? groupWeeklyMeals(weekly) : [{ key: "all", label: "", meals: sortWeeklyMeals(weekly) }];
+  const { colors } = useTheme();
+  const styles = useMemo(() => weekStyles(colors), [colors]);
 
   return (
     <>
@@ -133,11 +136,12 @@ export default function WeeklyList(props: any) {
   );
 }
 
-const styles = StyleSheet.create({
+function weekStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   group: { gap: 8, marginTop: 8 },
   groupLabel: {
-    color: colors.chromeText,
-    fontSize: 13,
+    color: colors.muted,
+    fontSize: type.caption,
     fontWeight: "700",
     letterSpacing: 0.6,
     textTransform: "uppercase",
@@ -149,14 +153,14 @@ const styles = StyleSheet.create({
   dayRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   dayChip: {
     borderWidth: 1,
-    borderColor: "rgba(247,243,235,0.2)",
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   dayChipOn: { backgroundColor: colors.brand, borderColor: colors.brand },
-  dayChipText: { color: colors.chromeText, fontSize: 12, fontWeight: "700" },
-  dayChipTextOn: { color: colors.surface },
+  dayChipText: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  dayChipTextOn: { color: colors.onBrand },
   miniChip: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -167,4 +171,5 @@ const styles = StyleSheet.create({
   },
   miniChipOn: { backgroundColor: colors.brandSoft, borderColor: colors.brandLine },
   miniChipText: { color: colors.text, fontSize: 11, fontWeight: "700" },
-});
+  });
+}

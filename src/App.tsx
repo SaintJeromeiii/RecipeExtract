@@ -13,7 +13,12 @@ import {
   recipeCategoryLabel,
   toggleRecipeCategory,
 } from "../shared/recipeCategories";
-import { parseServings, scaleIngredientLine } from "../shared/ingredients";
+import {
+  formatAmount,
+  parseServings,
+  scaleIngredientLine,
+  steppedGroceryAmount,
+} from "../shared/ingredients";
 import { recipeAsText } from "../shared/share-text";
 import { StepWithTimers, useCookTimers, useWakeLock } from "./kitchen";
 import {
@@ -31,6 +36,7 @@ import {
   saveRecipe,
   setAllGroceryChecked,
   setGroceryCategoryOrder,
+  setGroceryItemAmount,
   setGroceryItemCategory,
   setGroceryItemChecked,
   setRecipeFavorite,
@@ -937,6 +943,12 @@ export default function App() {
               current.map((row) => (row.id === updated.id ? updated : row)),
             );
           }}
+          onAmount={async (item, amount) => {
+            const updated = await setGroceryItemAmount(item.id, amount);
+            setGrocery((current) =>
+              current.map((row) => (row.id === updated.id ? updated : row)),
+            );
+          }}
           onMoveCategory={async (category, direction, visible) => {
             const next = moveCategoryOrder(categoryOrder, category, direction, visible);
             setCategoryOrder(await setGroceryCategoryOrder(next));
@@ -1492,6 +1504,7 @@ function GroceryPanel({
   onClose,
   onToggle,
   onCategory,
+  onAmount,
   onMoveCategory,
   onRemove,
   onCheckAll,
@@ -1504,6 +1517,7 @@ function GroceryPanel({
   onClose: () => void;
   onToggle: (item: GroceryItem) => void;
   onCategory: (item: GroceryItem, category: GroceryCategory) => void;
+  onAmount: (item: GroceryItem, amount: number) => void;
   onMoveCategory: (
     category: GroceryCategory,
     direction: -1 | 1,
@@ -1627,6 +1641,39 @@ function GroceryPanel({
                         </span>
                       </label>
                       <div className="grocery-item-actions">
+                        <div className="grocery-qty" role="group" aria-label={`Amount for ${item.name}`}>
+                          <button
+                            type="button"
+                            disabled={item.amount == null || item.amount <= 1}
+                            onClick={() => onAmount(item, steppedGroceryAmount(item.amount, -1))}
+                            aria-label={`Decrease ${item.name}`}
+                          >
+                            −
+                          </button>
+                          <input
+                            key={`${item.id}-${item.amount ?? "none"}`}
+                            className="grocery-qty-input"
+                            inputMode="decimal"
+                            defaultValue={item.amount == null ? "" : formatAmount(item.amount)}
+                            placeholder="qty"
+                            aria-label={`Quantity for ${item.name}`}
+                            onBlur={(event) => {
+                              const parsed = Number(event.target.value.replace(",", "."));
+                              if (!Number.isFinite(parsed) || parsed <= 0) return;
+                              if (item.amount != null && Math.abs(parsed - item.amount) < 0.001) {
+                                return;
+                              }
+                              onAmount(item, parsed);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => onAmount(item, steppedGroceryAmount(item.amount, 1))}
+                            aria-label={`Increase ${item.name}`}
+                          >
+                            +
+                          </button>
+                        </div>
                         <label className="grocery-cat-label">
                           <span className="visually-hidden">Move {item.label} to aisle</span>
                           <select

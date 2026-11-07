@@ -1,8 +1,10 @@
 import React from "react";
 import { Pressable, Text, StyleSheet, Animated } from "react-native";
-import { colors, radii, spacing } from "./tokens";
+import { useTheme } from "./Theme";
+import { radii, spacing } from "./tokens";
 
 export default function Button({ children, onPress, style, variant = "primary", disabled }: any) {
+  const { colors } = useTheme();
   const scale = React.useRef(new Animated.Value(1)).current;
   function onPressIn() {
     Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }).start();
@@ -12,7 +14,7 @@ export default function Button({ children, onPress, style, variant = "primary", 
   }
 
   const bg = variant === "primary" ? colors.brand : "transparent";
-  const color = variant === "primary" ? colors.surface : colors.text;
+  const color = variant === "primary" ? colors.onBrand : colors.text;
   const border =
     variant === "secondary"
       ? { borderWidth: 1, borderColor: colors.border, elevation: 0, shadowOpacity: 0 }
@@ -24,7 +26,7 @@ export default function Button({ children, onPress, style, variant = "primary", 
         onPressIn={onPressIn}
         onPressOut={onPressOut}
         onPress={onPress}
-        style={[styles.btn, { backgroundColor: bg }, border, style, disabled && styles.disabled]}
+        style={[styles.btn, { backgroundColor: bg, shadowColor: colors.text }, border, style, disabled && styles.disabled]}
         disabled={disabled}
       >
         <Text style={[styles.text, { color }]}>{children}</Text>
@@ -40,11 +42,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
   },
   text: { fontWeight: "600" },
   disabled: { opacity: 0.5 },

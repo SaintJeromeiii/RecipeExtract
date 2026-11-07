@@ -5,7 +5,9 @@ const INGREDIENT_HEADER =
 const STEP_HEADER =
   /^(instructions?|directions?|method|steps?|how to(?: make)?|preparation|prep)\b[:\s-]*$/i;
 const SKIP_LINE =
-  /^(#\w+|@\w+|follow for more|link in bio|save this|share this|comment|dm me|recipe below|full recipe|ingredients below|let(?:'|’)s (?:cook|make)|watch till end|don(?:'|’)t forget to)/i;
+  /^(#\w+|@\w+|follow for more|link in bio|save this|share this|comment|dm me|recipe below|full recipe|ingredients below|let(?:'|’)s (?:cook|make)|watch till end|don(?:'|’)t forget to|subscribe|like and|original audio|sound\b|music\b|credits?:|created by|recipe by|chef\b)/i;
+const NUTRITION_LINE =
+  /(?:\bmacros?\b|\bnutrition(?:al)?(?:\s+facts)?\b|\b(?:\d+(?:\.\d+)?\s*(?:g|grams?)\s*(?:of\s+)?(?:protein|carbs?|carbohydrates?|fat|fiber|sugar|sodium))\b|\b(?:protein|carbs?|carbohydrates?|fat|fiber|calories?|kcal)\s*[:\-]?\s*\d|\b\d+\s*(?:kcal|cal(?:ories)?)\b)/i;
 const AMOUNT_START =
   /^(?:\d+\s*[-/]\s*)?\d+(?:[./]\d+)?(?:\s*(?:to|-)\s*\d+(?:[./]\d+)?)?\s*(?:cups?|tbsps?|tbsp|tsps?|tsp|oz|ounces?|lbs?|pounds?|g|grams?|kg|ml|l|liters?|litres?|cloves?|slices?|pcs?|pieces?|cans?|packages?|pkg|bunches?|heads?|sticks?|pinches?|dashes?|handfuls?|qt|quarts?|pts?|pints?|gallons?|gal|inches?|cm)?\b/i;
 const BULLET = /^[\s]*[-•*▪◦●○◆◇▶️✅✔️☑️➤➔·]+[\s]*/;
@@ -21,13 +23,33 @@ function cleanCaptionLine(line: string): string {
     .trim();
 }
 
+export function isRecipeJunkLine(line: string): boolean {
+  const value = line.trim();
+  if (!value) return true;
+  if (SKIP_LINE.test(value) || NUTRITION_LINE.test(value)) return true;
+  if (/^#\w+(\s+#\w+)*$/.test(value)) return true;
+  if (/^[🎵🎶🎤]+/.test(value)) return true;
+  const withoutAmount = value.replace(AMOUNT_START, "").trim();
+  if (
+    /^(protein|carbs?|carbohydrates?|fat|fiber|calories?|kcal|macros?|nutrition)$/i.test(
+      withoutAmount,
+    )
+  ) {
+    return true;
+  }
+  if (/\b(high protein|low calorie|macro friendly|ww points?)\b/i.test(value) && !AMOUNT_START.test(value)) {
+    return true;
+  }
+  return false;
+}
+
 function looksLikeIngredient(line: string): boolean {
   if (!line || line.length < 2 || line.length > 180) return false;
-  if (SKIP_LINE.test(line)) return false;
+  if (isRecipeJunkLine(line)) return false;
   if (STEP_HEADER.test(line) || INGREDIENT_HEADER.test(line)) return false;
-  if (AMOUNT_START.test(line)) return true;
-  if (/^[A-Za-z].{0,60}$/.test(line) && !/[.!?]$/.test(line) && line.split(" ").length <= 10) {
-    // Short noun-ish lines in an ingredients section
+  if (AMOUNT_START.test(line) && !isRecipeJunkLine(line.replace(AMOUNT_START, "").trim())) return true;
+  if (looksLikeClickbaitTitle(line)) return false;
+  if (/^[A-Za-z].{0,60}$/.test(line) && !/[.!?]$/.test(line) && line.split(" ").length <= 8) {
     return true;
   }
   return false;
@@ -35,10 +57,116 @@ function looksLikeIngredient(line: string): boolean {
 
 function looksLikeStep(line: string): boolean {
   if (!line || line.length < 8) return false;
-  if (SKIP_LINE.test(line)) return false;
+  if (isRecipeJunkLine(line)) return false;
   if (INGREDIENT_HEADER.test(line) || STEP_HEADER.test(line)) return false;
   if (AMOUNT_START.test(line) && line.split(" ").length <= 8) return false;
   return true;
+}
+
+function looksLikeClickbaitTitle(text: string): boolean {
+  const value = text.trim();
+  if (!value) return true;
+  if (isRecipeJunkLine(value)) return true;
+  if (/[|#]/.test(value)) return true;
+  if (
+    /\b(viral|pov:|wait for it|you won'?t believe|must try|easy dinner idea|link in bio|follow for|watch this)\b/i.test(
+      value,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function titleCaseIfShouting(text: string): string {
+  if (text.length < 12) return text;
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  if (letters.length < 8) return text;
+  const upper = letters.replace(/[^A-Z]/g, "").length;
+  if (upper / letters.length < 0.85) return text;
+  return text
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (match) => match.toUpperCase());
+}
+
+export function sanitizeDishTitle(text: string): string {
+  const parts = text
+    .replace(/#\w+/g, " ")
+    .replace(/@\w+/g, " ")
+    .split(/\s*[|•·]\s*|\s+[–—]\s+|:\s+/);
+  const kept = parts
+    .map((part) =>
+      part
+        .replace(/\b\d+\s*(?:g|grams?)\s*(?:protein|carbs?|fat|fiber)\b/gi, "")
+        .replace(/\b\d+\s*(?:kcal|cal(?:ories)?)\b/gi, "")
+        .replace(/\b(high[- ]protein|low[- ]calorie|macro[- ]friendly|must[- ]try|viral|macros?)\b/gi, "")
+        .trim(),
+    )
+    .filter((part) => part && !isRecipeJunkLine(part) && !looksLikeClickbaitTitle(part));
+  let value = (kept[0] || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  value = titleCaseIfShouting(value);
+  if (!value || isRecipeJunkLine(value) || looksLikeClickbaitTitle(value)) return "";
+  if (value.length > 72) value = `${value.slice(0, 69).trim()}…`;
+  return value;
+}
+
+function sameAsTitle(line: string, title: string): boolean {
+  const a = line.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const b = title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (!a || !b || AMOUNT_START.test(line)) return false;
+  if (a === b) return true;
+  return a.length > 12 && (a.startsWith(b) || b.startsWith(a));
+}
+
+function uniqueLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const key = line.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+  }
+  return out;
+}
+
+export function sanitizeExtractedRecipe(recipe: Recipe): Recipe {
+  const title = sanitizeDishTitle(recipe.title) || recipe.title.trim() || "Social recipe";
+  const ingredients = uniqueLines(
+    recipe.ingredients
+      .map((line) => cleanCaptionLine(line))
+      .filter(
+        (line) =>
+          line &&
+          !isRecipeJunkLine(line) &&
+          !sameAsTitle(line, title) &&
+          (AMOUNT_START.test(line) || !looksLikeClickbaitTitle(line)),
+      ),
+  );
+  const steps = uniqueLines(
+    recipe.steps
+      .map((line) => cleanCaptionLine(line))
+      .filter(
+        (line) =>
+          line &&
+          !isRecipeJunkLine(line) &&
+          !sameAsTitle(line, title) &&
+          !INGREDIENT_HEADER.test(line) &&
+          !STEP_HEADER.test(line),
+      ),
+  );
+  return {
+    ...recipe,
+    title,
+    description:
+      recipe.description && !isRecipeJunkLine(recipe.description) && !NUTRITION_LINE.test(recipe.description)
+        ? recipe.description
+        : null,
+    ingredients,
+    steps,
+  };
 }
 
 function firstSentenceTitle(text: string, fallback: string): string {
@@ -122,13 +250,13 @@ export function recipeFromCaption(
     }
 
     const line = cleanCaptionLine(raw);
-    if (!line || SKIP_LINE.test(line)) continue;
+    if (!line || isRecipeJunkLine(line)) continue;
 
     if (mode === "ingredients") {
       if (looksLikeStep(line) && !AMOUNT_START.test(line) && line.split(" ").length > 12) {
         mode = "steps";
         steps.push(line);
-      } else if (looksLikeIngredient(line) || AMOUNT_START.test(line)) {
+      } else if (looksLikeIngredient(line)) {
         ingredients.push(line);
       } else if (looksLikeStep(line)) {
         mode = "steps";
@@ -143,7 +271,7 @@ export function recipeFromCaption(
     }
 
     // unknown: classify
-    if (AMOUNT_START.test(line) || (BULLET.test(raw) && looksLikeIngredient(line))) {
+    if (looksLikeIngredient(line) && (AMOUNT_START.test(line) || BULLET.test(raw))) {
       ingredients.push(line);
       mode = "ingredients";
     } else if (NUMBERED.test(raw) && looksLikeStep(line)) {
@@ -158,8 +286,8 @@ export function recipeFromCaption(
   if (!ingredients.length && !steps.length) {
     for (const raw of rawLines) {
       const line = cleanCaptionLine(raw);
-      if (!line || SKIP_LINE.test(line)) continue;
-      if (AMOUNT_START.test(line)) ingredients.push(line);
+      if (!line || isRecipeJunkLine(line)) continue;
+      if (looksLikeIngredient(line) && AMOUNT_START.test(line)) ingredients.push(line);
       else if (NUMBERED.test(raw) || looksLikeStep(line)) steps.push(line);
     }
   }
@@ -175,9 +303,9 @@ export function recipeFromCaption(
   if (!ingredients.length && !steps.length) {
     const body = rawLines
       .map(cleanCaptionLine)
-      .filter((line) => line && !SKIP_LINE.test(line) && !/^#/.test(line));
+      .filter((line) => line && !isRecipeJunkLine(line) && !/^#/.test(line));
     for (const line of body) {
-      if (AMOUNT_START.test(line)) ingredients.push(line);
+      if (looksLikeIngredient(line) && AMOUNT_START.test(line)) ingredients.push(line);
       else steps.push(line);
     }
   }
@@ -199,13 +327,11 @@ export function recipeFromCaption(
     );
   }
 
-  const title =
-    extras?.title?.trim() ||
-    firstSentenceTitle(preamble[0] || caption, "Social recipe");
+  const title = pickCaptionTitle(extras?.title, preamble, caption);
 
-  return {
+  return sanitizeExtractedRecipe({
     title,
-    description: preamble.slice(0, 3).join(" ") || null,
+    description: preamble.filter((line) => !isRecipeJunkLine(line)).slice(0, 3).join(" ") || null,
     image: extras?.image ?? null,
     author: extras?.author ?? null,
     sourceUrl,
@@ -216,5 +342,16 @@ export function recipeFromCaption(
     totalTime: null,
     ingredients,
     steps: steps.length ? steps : ["See ingredients — steps weren't listed in the caption."],
-  };
+  });
+}
+
+function pickCaptionTitle(
+  extrasTitle: string | null | undefined,
+  preamble: string[],
+  caption: string,
+): string {
+  const fromPreamble = sanitizeDishTitle(preamble[0] || "");
+  const fromCaption = sanitizeDishTitle(firstSentenceTitle(caption, ""));
+  const fromVideo = extrasTitle ? sanitizeDishTitle(extrasTitle) : "";
+  return fromPreamble || fromCaption || fromVideo || "Social recipe";
 }

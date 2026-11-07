@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Modal, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "./Button";
 import Card from "./Card";
-import { colors, fonts, radii, spacing } from "./tokens";
+import { useTheme } from "./Theme";
+import { fonts, radii, spacing, type ThemeColors } from "./tokens";
 
 const STEPS = [
   {
@@ -39,6 +40,8 @@ type Props = {
 };
 
 export default function MobileOnboardingTutorial({ visible, onComplete }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => onboardingStyles(colors), [colors]);
   const [index, setIndex] = useState(0);
   const last = index >= STEPS.length - 1;
   const step = STEPS[index] ?? STEPS[0];
@@ -96,10 +99,11 @@ export default function MobileOnboardingTutorial({ visible, onComplete }: Props)
   );
 }
 
-const styles = StyleSheet.create({
+function onboardingStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   scrim: {
     flex: 1,
-    backgroundColor: "rgba(8, 16, 24, 0.55)",
+    backgroundColor: colors.overlay,
   },
   safe: {
     flex: 1,
@@ -157,4 +161,5 @@ const styles = StyleSheet.create({
   actionBtn: {
     width: "100%",
   },
-});
+  });
+}

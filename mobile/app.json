@@ -2,14 +2,14 @@
   "expo": {
     "name": "Pluck",
     "slug": "recipe-extract",
-    "version": "1.0.7",
+    "version": "1.0.10",
     "orientation": "portrait",
     "icon": "./assets/owl-logo.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/owl-logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0E1519"
+      "backgroundColor": "#F6F0E4"
     },
     "scheme": "recipeextract",
     "newArchEnabled": true,
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.recipeextract.app",
-      "versionCode": 8,
+      "versionCode": 11,
       "usesCleartextTraffic": false,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {

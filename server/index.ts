@@ -19,6 +19,7 @@ import {
   removeWeeklyMeal,
   saveRecipe,
   setAllGroceryChecked,
+  setGroceryAmount,
   setGroceryCategory,
   setGroceryCategoryOrder,
   setGroceryChecked,
@@ -264,8 +265,12 @@ app.delete("/api/grocery", async (_req, res) => {
 app.patch("/api/grocery/:id", async (req, res) => {
   const checked = typeof req.body?.checked === "boolean" ? req.body.checked : undefined;
   const category = isGroceryCategory(req.body?.category) ? req.body.category : undefined;
-  if (checked === undefined && category === undefined) {
-    res.status(400).json({ error: "Send checked or a grocery category." });
+  const amount =
+    typeof req.body?.amount === "number" && Number.isFinite(req.body.amount)
+      ? req.body.amount
+      : undefined;
+  if (checked === undefined && category === undefined && amount === undefined) {
+    res.status(400).json({ error: "Send checked, amount, or a grocery category." });
     return;
   }
   try {
@@ -275,6 +280,9 @@ app.patch("/api/grocery/:id", async (req, res) => {
     }
     if (category !== undefined) {
       item = await setGroceryCategory(String(req.params.id), category);
+    }
+    if (amount !== undefined) {
+      item = await setGroceryAmount(String(req.params.id), amount);
     }
     res.json(item);
   } catch (error) {

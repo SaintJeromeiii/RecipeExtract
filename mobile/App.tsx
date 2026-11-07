@@ -30,7 +30,13 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { firstHttpUrl, isSocialUrl } from "../shared/social";
 import { canOpenSource } from "../shared/recipeSource";
 import { SAMPLE_RECIPE } from "../shared/recipeQuality";
-import { matchesQuery, parseServings, scaleIngredientLine } from "../shared/ingredients";
+import {
+  formatAmount,
+  matchesQuery,
+  parseServings,
+  scaleIngredientLine,
+  steppedGroceryAmount,
+} from "../shared/ingredients";
 import { sortWeeklyMeals, weekdayLabel } from "../shared/weekly";
 import {
   groceryCategoryLabel,
@@ -68,6 +74,7 @@ import {
   saveRecipe,
   setAllGroceryChecked,
   setGroceryCategoryOrder,
+  setGroceryItemAmount,
   setGroceryItemCategory,
   setGroceryItemChecked,
   setRecipeFavorite,
@@ -94,7 +101,9 @@ import BottomNav, { type BottomTab } from "./src/ui/BottomNav";
 import MobileOnboardingTutorial from "./src/ui/MobileOnboardingTutorial";
 import WeekdayPicker from "./src/ui/WeekdayPicker";
 import WeekdayPlanToggle from "./src/ui/WeekdayPlanToggle";
-import { colors, fonts } from "./src/ui/tokens";
+import AppearanceToggle from "./src/ui/AppearanceToggle";
+import { ThemeProvider, useTheme } from "./src/ui/Theme";
+import { fonts, type, type ThemeColors } from "./src/ui/tokens";
 
 const PREVIEW_NEW_HOME = true;
 
@@ -127,20 +136,34 @@ const PRIVACY_URL =
 const TESTERS_URL =
   extraUrls?.testersUrl || "https://recipeextract-production.up.railway.app/testers.html";
 
+function ThemedStatusBar() {
+  const { appearance } = useTheme();
+  return <StatusBar style={appearance === "dark" ? "light" : "dark"} />;
+}
+
 export default function App() {
   return (
     <ShareIntentProvider>
       <SafeAreaProvider>
-        <StatusBar style="light" />
-        <ErrorBoundary>
-          <AppInner />
-        </ErrorBoundary>
+        <ThemeProvider>
+          <ThemedStatusBar />
+          <ErrorBoundary>
+            <AppInner />
+          </ErrorBoundary>
+        </ThemeProvider>
       </SafeAreaProvider>
     </ShareIntentProvider>
   );
 }
 
+function useAppStyles() {
+  const { colors } = useTheme();
+  return useMemo(() => createAppStyles(colors), [colors]);
+}
+
 function AppInner() {
+  const { colors } = useTheme();
+  const styles = useAppStyles();
   const { height: windowHeight } = useWindowDimensions();
   const [url, setUrl] = useState("");
   const [captionText, setCaptionText] = useState("");
@@ -183,6 +206,9 @@ function AppInner() {
   const [draftNotes, setDraftNotes] = useState("");
   const [draftTag, setDraftTag] = useState("");
   const [groceryDraft, setGroceryDraft] = useState("");
+  const [groceryQtyDraft, setGroceryQtyDraft] = useState<{ id: string; value: string } | null>(
+    null,
+  );
   const [removedRecipe, setRemovedRecipe] = useState<SavedRecipe | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
@@ -623,6 +649,11 @@ function AppInner() {
     if (!trimmed) return;
     setGrocery(await addGrocery({ ingredients: [trimmed] }));
     setGroceryDraft("");
+  }
+
+  async function handleGroceryAmount(item: GroceryItem, amount: number) {
+    const updated = await setGroceryItemAmount(item.id, amount);
+    setGrocery((current) => current.map((row) => (row.id === updated.id ? updated : row)));
   }
 
   async function openSample() {
@@ -1226,6 +1257,7 @@ function AppInner() {
             <Text style={styles.groceryHint}>
               4. Recipes stay on this phone. Export a backup before you uninstall.
             </Text>
+            <AppearanceToggle />
             <WeekdayPlanToggle
               value={assignWeekdays}
               onChange={handleAssignWeekdays}
@@ -1426,7 +1458,7 @@ function AppInner() {
                       {group.items.map((item) => (
                         <View key={item.id} style={styles.checkRow}>
                           <Pressable
-                            style={{ flex: 1, flexDirection: "row", gap: 8 }}
+                            style={{ flex: 1, flexDirection: "row", gap: 8, minWidth: 0 }}
                             onPress={() => {
                               void setGroceryItemChecked(item.id, !item.checked).then(
                                 (updated) => {
@@ -1442,6 +1474,67 @@ function AppInner() {
                             <Check checked={item.checked} />
                             <Text style={styles.checkLabel}>{item.label}</Text>
                           </Pressable>
+                          <View style={styles.groceryQty}>
+                            <Pressable
+                              disabled={item.amount == null || item.amount <= 1}
+                              onPress={() =>
+                                void handleGroceryAmount(
+                                  item,
+                                  steppedGroceryAmount(item.amount, -1),
+                                )
+                              }
+                            >
+                              <Text
+                                style={[
+                                  styles.groceryQtyBtn,
+                                  (item.amount == null || item.amount <= 1) && styles.disabled,
+                                ]}
+                              >
+                                −
+                              </Text>
+                            </Pressable>
+                            <TextInput
+                              style={styles.groceryQtyInput}
+                              value={
+                                groceryQtyDraft?.id === item.id
+                                  ? groceryQtyDraft.value
+                                  : item.amount == null
+                                    ? ""
+                                    : formatAmount(item.amount)
+                              }
+                              placeholder="qty"
+                              placeholderTextColor={colors.muted}
+                              keyboardType="decimal-pad"
+                              selectTextOnFocus
+                              onFocus={() =>
+                                setGroceryQtyDraft({
+                                  id: item.id,
+                                  value: item.amount == null ? "" : formatAmount(item.amount),
+                                })
+                              }
+                              onChangeText={(value) =>
+                                setGroceryQtyDraft({ id: item.id, value })
+                              }
+                              onEndEditing={(event) => {
+                                const parsed = Number(
+                                  String(event.nativeEvent.text).replace(",", "."),
+                                );
+                                setGroceryQtyDraft(null);
+                                if (!Number.isFinite(parsed) || parsed <= 0) return;
+                                void handleGroceryAmount(item, parsed);
+                              }}
+                            />
+                            <Pressable
+                              onPress={() =>
+                                void handleGroceryAmount(
+                                  item,
+                                  steppedGroceryAmount(item.amount, 1),
+                                )
+                              }
+                            >
+                              <Text style={styles.groceryQtyBtn}>+</Text>
+                            </Pressable>
+                          </View>
                           <Pressable onPress={() => setAssigningItem(item)}>
                             <Text style={styles.groceryCatChip}>
                               {groceryCategoryLabel(itemGroceryCategory(item))}
@@ -1575,6 +1668,7 @@ function TimedText({
   onStart: (match: TimerMatch) => void;
   large?: boolean;
 }) {
+  const styles = useAppStyles();
   const matches = findTimers(text);
   if (!matches.length) {
     return <Text style={large ? styles.cookStep : styles.stepText}>{text}</Text>;
@@ -1633,6 +1727,7 @@ function CookMode({
   onIndex: (index: number) => void;
   onMarkDone: () => void;
 }) {
+  const styles = useAppStyles();
   if (!recipe) return null;
   const total = recipe.steps.length;
   const step = recipe.steps[index] ?? "";
@@ -1699,6 +1794,7 @@ function CookMode({
 }
 
 function Check({ checked }: { checked: boolean }) {
+  const styles = useAppStyles();
   return (
     <View style={[styles.check, checked && styles.checkOn]}>
       {checked ? <Text style={styles.checkMark}>✓</Text> : null}
@@ -1706,8 +1802,9 @@ function Check({ checked }: { checked: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0e1519" },
+function createAppStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.bg },
   body: { flex: 1 },
   homeLibrary: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, gap: 12 },
   topbar: {
@@ -1717,7 +1814,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(247,243,235,0.1)",
+    borderBottomColor: colors.border,
+    backgroundColor: colors.bg,
   },
   brandName: { flex: 1, marginRight: 12 },
   brand: { flexDirection: "row", alignItems: "center", gap: 12 },
@@ -1725,24 +1823,24 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "#0E1519",
+    backgroundColor: colors.surface,
   },
-  brandMarkText: { color: colors.surface, fontWeight: "800" },
+  brandMarkText: { color: colors.brand, fontWeight: "800" },
   brandText: {
-    color: "#85B8FF",
+    color: colors.text,
     fontWeight: "700",
-    fontSize: 32,
+    fontSize: type.display,
     fontFamily: fonts.display,
     letterSpacing: -0.6,
   },
   hero: { padding: 20, paddingBottom: 48, gap: 12 },
   newHomeScroll: { paddingBottom: 16 },
-  eyebrow: { color: colors.gold, letterSpacing: 2.2, textTransform: "uppercase", fontSize: 12, fontWeight: "600" },
-  title: { color: "#f7f3eb", fontSize: 36, fontWeight: "700" },
-  titleEm: { color: colors.gold, fontSize: 32, fontStyle: "italic" },
+  eyebrow: { color: colors.brand, letterSpacing: 2.2, textTransform: "uppercase", fontSize: 12, fontWeight: "600" },
+  title: { color: colors.text, fontSize: type.display, fontWeight: "700" },
+  titleEm: { color: colors.brand, fontSize: type.display, fontStyle: "italic" },
   composer: {
-    backgroundColor: "#172126",
-    borderColor: "rgba(247,243,235,0.1)",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 22,
     padding: 10,
@@ -1750,63 +1848,66 @@ const styles = StyleSheet.create({
   },
   modeSwitch: {
     flexDirection: "row",
-    backgroundColor: "rgba(0,0,0,0.22)",
+    backgroundColor: colors.paper,
     borderRadius: 999,
     padding: 4,
     gap: 4,
   },
   modeBtn: { flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: "center" },
-  modeBtnOn: { backgroundColor: "#1c2a31" },
-  modeBtnText: { color: "#9aa8a3", fontWeight: "700" },
-  modeBtnTextOn: { color: "#f7f3eb" },
+  modeBtnOn: { backgroundColor: colors.surface },
+  modeBtnText: { color: colors.muted, fontWeight: "700" },
+  modeBtnTextOn: { color: colors.text },
   urlForm: { gap: 10 },
   input: {
-    color: "#f7f3eb",
-    fontSize: 16,
+    color: colors.text,
+    fontSize: type.body,
     padding: 12,
-    backgroundColor: "rgba(0,0,0,0.18)",
+    backgroundColor: colors.surface,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   captionInput: { minHeight: 140 },
   formRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
   primary: { backgroundColor: colors.brand, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12 },
-  primaryText: { color: colors.surface, fontWeight: "700", textAlign: "center" },
+  primaryText: { color: colors.onBrand, fontWeight: "700", textAlign: "center" },
   ghost: {
     borderWidth: 1,
-    borderColor: "rgba(247,243,235,0.12)",
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  ghostText: { color: "#f7f3eb", fontWeight: "600" },
+  ghostText: { color: colors.text, fontWeight: "600" },
   error: { color: colors.error },
-  sectionTitle: { color: "#f7f3eb", fontSize: 22, fontWeight: "700", marginTop: 10 },
+  sectionTitle: { color: colors.text, fontSize: type.title, fontWeight: "700", marginTop: 10, fontFamily: fonts.heading },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     borderWidth: 1,
-    borderColor: "rgba(247,243,235,0.12)",
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#172126",
+    backgroundColor: colors.surface,
   },
   chipOn: { backgroundColor: colors.brandSoft, borderColor: colors.brandLine },
-  chipText: { color: "#f7f3eb" },
+  chipText: { color: colors.text },
   search: {
     borderWidth: 1,
-    borderColor: "rgba(247,243,235,0.12)",
+    borderColor: colors.border,
     borderRadius: 14,
-    color: "#f7f3eb",
+    color: colors.text,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: "#172126",
+    backgroundColor: colors.surface,
   },
   weeklyRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#172126",
-    borderColor: "rgba(247,243,235,0.1)",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 18,
     paddingHorizontal: 12,
@@ -1814,8 +1915,8 @@ const styles = StyleSheet.create({
   },
   libraryCard: {
     gap: 8,
-    backgroundColor: "#172126",
-    borderColor: "rgba(247,243,235,0.1)",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 18,
     padding: 8,
@@ -1827,28 +1928,29 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 14,
-    backgroundColor: "#1c2a31",
+    backgroundColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
-  libraryName: { color: "#f7f3eb", fontWeight: "700" },
-  libraryMeta: { color: "#9aa8a3" },
+  libraryName: { color: colors.text, fontWeight: "700" },
+  libraryMeta: { color: colors.muted },
   recipe: { padding: 16, paddingBottom: 48, gap: 12 },
-  recipeImage: { width: "100%", height: 210, borderRadius: 22, backgroundColor: "#1c2a31" },
-  recipeTitle: { color: "#f7f3eb", fontSize: 30, fontWeight: "700" },
+  recipeImage: { width: "100%", height: 210, borderRadius: 22, backgroundColor: colors.border },
+  recipeTitle: { color: colors.text, fontSize: type.display, fontWeight: "700", fontFamily: fonts.heading },
   sourceLink: { color: colors.brand, fontWeight: "700", fontSize: 14 },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   metaChip: {
     borderWidth: 1,
-    borderColor: "rgba(247,243,235,0.12)",
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  metaText: { color: "#f7f3eb", fontSize: 12 },
+  metaText: { color: colors.text, fontSize: 12 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  panel: { backgroundColor: "#f7f3eb", borderRadius: 22, padding: 16, gap: 6 },
-  panelTitle: { color: "#142018", fontSize: 22, fontWeight: "700" },
+  panel: { backgroundColor: colors.surface, borderRadius: 22, padding: 16, gap: 6 },
+  panelTitle: { color: colors.text, fontSize: 22, fontWeight: "700" },
   checkRow: { flexDirection: "row", gap: 10, paddingVertical: 8, alignItems: "flex-start" },
   check: {
     width: 22,
@@ -1860,33 +1962,33 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   checkOn: { backgroundColor: colors.brand },
-  checkMark: { color: colors.surface, fontWeight: "800", fontSize: 12 },
-  checkLabel: { flex: 1, color: "#142018", fontSize: 16 },
-  stepCard: { flexDirection: "row", gap: 12, backgroundColor: "#efe8db", borderRadius: 18, padding: 12 },
+  checkMark: { color: colors.onBrand, fontWeight: "800", fontSize: 12 },
+  checkLabel: { flex: 1, color: colors.text, fontSize: 16 },
+  stepCard: { flexDirection: "row", gap: 12, backgroundColor: colors.surface, borderRadius: 18, padding: 12 },
   stepIndex: {
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: "#142018",
+    backgroundColor: colors.brand,
     alignItems: "center",
     justifyContent: "center",
   },
-  stepIndexText: { color: "#f7f3eb", fontWeight: "800", fontSize: 18 },
-  stepText: { color: "#142018", fontSize: 17, lineHeight: 24 },
-  textBtn: { color: "#142018", fontWeight: "700", marginTop: 8 },
+  stepIndexText: { color: colors.onBrand, fontWeight: "800", fontSize: 18 },
+  stepText: { color: colors.text, fontSize: 17, lineHeight: 24 },
+  textBtn: { color: colors.text, fontWeight: "700", marginTop: 8 },
   timerChip: { color: colors.brand, textDecorationLine: "underline", fontWeight: "700" },
   editArea: {
     minHeight: 120,
     borderWidth: 1,
-    borderColor: "rgba(20,32,24,0.12)",
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 10,
-    color: "#142018",
+    color: colors.text,
     textAlignVertical: "top",
   },
   loading: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(8,12,14,0.7)",
+    backgroundColor: colors.overlay,
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
@@ -1895,28 +1997,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: "#172126",
+    backgroundColor: colors.surface,
     borderRadius: 18,
     padding: 16,
   },
-  loadingText: { color: "#f7f3eb", flexShrink: 1 },
-  cook: { flex: 1, backgroundColor: "#081014" },
+  loadingText: { color: colors.text, flexShrink: 1 },
+  cook: { flex: 1, backgroundColor: colors.bg },
   cookBar: { flexDirection: "row", alignItems: "center", gap: 8, padding: 16 },
-  cookBarText: { color: "#9aa8a3", flex: 1, textTransform: "uppercase" },
+  cookBarText: { color: colors.muted, flex: 1, textTransform: "uppercase" },
   cookStage: { padding: 20, gap: 12 },
-  cookPhoto: { width: "100%", height: 240, borderRadius: 22, backgroundColor: "#1c2a31" },
-  cookStep: { color: "#fff8ef", fontSize: 32, lineHeight: 40, fontWeight: "700" },
+  cookPhoto: { width: "100%", height: 240, borderRadius: 22, backgroundColor: colors.border },
+  cookStep: { color: colors.text, fontSize: 32, lineHeight: 40, fontWeight: "700" },
   cookNav: { flexDirection: "row", gap: 10, padding: 16 },
   cookNavBtn: { flex: 1, alignItems: "center", minHeight: 52, justifyContent: "center" },
   groceryWrap: {
     flex: 1,
-    backgroundColor: "rgba(8,12,14,0.7)",
+    backgroundColor: colors.overlay,
     justifyContent: "center",
     paddingHorizontal: 16,
     paddingTop: 24,
   },
   groceryCard: {
-    backgroundColor: "#f7f3eb",
+    backgroundColor: colors.surface,
     borderRadius: 22,
     padding: 16,
     gap: 8,
@@ -1924,7 +2026,7 @@ const styles = StyleSheet.create({
   },
   groceryList: { flexGrow: 0 },
   groceryListContent: { paddingBottom: 4 },
-  groceryHint: { color: "#5c6a62", fontSize: 13, marginBottom: 4, fontWeight: "600" },
+  groceryHint: { color: colors.muted, fontSize: 13, marginBottom: 4, fontWeight: "600" },
   groceryArrangeRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1932,11 +2034,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   groceryMoveBtn: {
-    color: "#142018",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
     borderWidth: 1,
-    borderColor: "rgba(20,32,24,0.14)",
+    borderColor: colors.border,
     borderRadius: 8,
     overflow: "hidden",
     paddingHorizontal: 8,
@@ -1953,7 +2055,7 @@ const styles = StyleSheet.create({
   },
   groceryAssignOn: { backgroundColor: colors.brandSoft },
   groceryGroupTitle: {
-    color: "#5c6a62",
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1.2,
@@ -1962,27 +2064,59 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   groceryCatChip: {
-    color: "#5c6a62",
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "600",
     borderWidth: 1,
-    borderColor: "rgba(20,32,24,0.14)",
+    borderColor: colors.border,
     borderRadius: 999,
     overflow: "hidden",
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  groceryRemove: { color: "#142018", fontWeight: "700", fontSize: 14 },
+  groceryQty: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
+  },
+  groceryQtyBtn: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "700",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    overflow: "hidden",
+    minWidth: 28,
+    textAlign: "center",
+    paddingVertical: 2,
+  },
+  groceryQtyInput: {
+    minWidth: 40,
+    maxWidth: 52,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    color: colors.text,
+    backgroundColor: colors.paper,
+    textAlign: "center",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  groceryRemove: { color: colors.text, fontWeight: "700", fontSize: 14 },
   groceryAdd: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 10 },
   groceryAddInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "rgba(20,32,24,0.14)",
+    borderColor: colors.border,
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#142018",
-    backgroundColor: "#fffaf2",
+    color: colors.text,
+    backgroundColor: colors.paper,
   },
   undoToast: {
     position: "absolute",
@@ -1993,23 +2127,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-    backgroundColor: "#f4f0ea",
+    backgroundColor: colors.surface,
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: "rgba(63,74,58,0.18)",
+    borderColor: colors.border,
   },
-  undoToastText: { flex: 1, color: "#1c3d5c" },
-  undoToastAction: { color: "#3f4a3a", fontWeight: "700" },
+  undoToastText: { flex: 1, color: colors.text },
+  undoToastAction: { color: colors.brand, fontWeight: "700" },
   groceryGhost: {
     flexGrow: 1,
     borderWidth: 1,
-    borderColor: "rgba(20,32,24,0.14)",
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  groceryGhostText: { color: "#142018", fontWeight: "600", textAlign: "center" },
+  groceryGhostText: { color: colors.text, fontWeight: "600", textAlign: "center" },
   disabled: { opacity: 0.45 },
-});
+  });
+}

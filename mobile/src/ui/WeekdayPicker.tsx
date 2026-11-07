@@ -1,7 +1,9 @@
+import { useMemo } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { WEEKDAYS, weekdayLabel } from "../../../shared/weekly";
 import type { Weekday } from "../types";
-import { colors, radii, spacing } from "./tokens";
+import { useTheme } from "./Theme";
+import { radii, spacing, type ThemeColors } from "./tokens";
 
 export default function WeekdayPicker({
   visible,
@@ -14,6 +16,8 @@ export default function WeekdayPicker({
   onPick: (day: Weekday | null) => void;
   onClose: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => pickerStyles(colors), [colors]);
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.scrim}>
@@ -42,10 +46,11 @@ export default function WeekdayPicker({
   );
 }
 
-const styles = StyleSheet.create({
+function pickerStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   scrim: {
     flex: 1,
-    backgroundColor: "rgba(8,12,14,0.72)",
+    backgroundColor: colors.overlay,
     justifyContent: "center",
     padding: 24,
   },
@@ -68,4 +73,5 @@ const styles = StyleSheet.create({
   },
   chipText: { color: colors.text, fontWeight: "700" },
   cancel: { color: colors.brandDark, fontWeight: "700", marginTop: 4 },
-});
+  });
+}

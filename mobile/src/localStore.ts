@@ -17,6 +17,7 @@ export const {
   addGroceryLines,
   setGroceryChecked,
   setGroceryCategory,
+  setGroceryAmount,
   removeGroceryItem,
   clearCheckedGrocery,
   clearAllGrocery,

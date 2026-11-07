@@ -12,6 +12,7 @@ import {
   normalizeRecipeCategories,
 } from "../shared/recipeCategories.ts";
 import {
+  applyGroceryAmount,
   compactGroceryList,
   formatGroceryLabel,
   groceryKey,
@@ -19,6 +20,7 @@ import {
   normalizeGroceryName,
   parseIngredient,
 } from "../shared/ingredients.ts";
+import { isRecipeJunkLine } from "../shared/captionRecipe.ts";
 import {
   hydrateWeeklyMeal,
   isWeekday,
@@ -280,6 +282,14 @@ export async function addGroceryLines(input: {
     const parsed = parseIngredient(line);
     if (!parsed.name) continue;
     parsed.name = normalizeGroceryName(parsed.name);
+    if (
+      !parsed.name ||
+      isRecipeJunkLine(line) ||
+      isRecipeJunkLine(parsed.name) ||
+      parsed.name.split(" ").length > 10
+    ) {
+      continue;
+    }
     const key = groceryKey(parsed);
     const existing = store.grocery.find((item) => item.key === key && !item.checked);
     if (existing) {
@@ -324,14 +334,22 @@ export async function setGroceryCategory(
   return patchGroceryItem(id, { category });
 }
 
+export async function setGroceryAmount(id: string, amount: number): Promise<GroceryItem> {
+  return patchGroceryItem(id, { amount });
+}
+
 async function patchGroceryItem(
   id: string,
-  patch: { checked?: boolean; category?: GroceryCategory },
+  patch: { checked?: boolean; category?: GroceryCategory; amount?: number | null },
 ): Promise<GroceryItem> {
   const store = await loadStore();
   const current = store.grocery.find((item) => item.id === id);
   if (!current) throw new Error("That grocery item was not found.");
-  const next = { ...current, ...patch };
+  const { amount, ...rest } = patch;
+  const next =
+    amount === undefined
+      ? { ...current, ...rest }
+      : applyGroceryAmount({ ...current, ...rest }, amount);
   store.grocery = store.grocery.map((item) => (item.id === id ? next : item));
   await persist(store);
   return next;

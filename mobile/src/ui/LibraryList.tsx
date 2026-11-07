@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, Image, Pressable, TextInput } from "react-native";
 import Card from "./Card";
 import Button from "./Button";
-import { colors } from "./tokens";
+import { useTheme } from "./Theme";
 import { weekdayLabel } from "../../../shared/weekly";
 
 export default function LibraryList(props: any) {
@@ -29,6 +29,7 @@ export default function LibraryList(props: any) {
     setDoneSteps,
     setView,
   } = props;
+  const { colors } = useTheme();
 
   return (
     <>

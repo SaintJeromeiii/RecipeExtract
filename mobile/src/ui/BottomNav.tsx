@@ -1,9 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
-
-const ACTIVE = "#85B8FF";
-const IDLE = "#55555A";
+import { useTheme } from "./Theme";
+import { fonts, spacing } from "./tokens";
 
 const HOME = `<svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.75 19.2493V11.9159C13.75 11.6728 13.6534 11.4397 13.4815 11.2678C13.3096 11.0958 13.0764 10.9993 12.8333 10.9993H9.16667C8.92355 10.9993 8.69039 11.0958 8.51849 11.2678C8.34658 11.4397 8.25 11.6728 8.25 11.9159V19.2493M2.75 9.16637C2.74994 8.89968 2.80806 8.63619 2.92031 8.39428C3.03255 8.15237 3.19623 7.93785 3.39992 7.76571L9.81658 2.26571C10.1475 1.98604 10.5667 1.8326 11 1.8326C11.4333 1.8326 11.8525 1.98604 12.1834 2.26571L18.6001 7.76571C18.8038 7.93785 18.9674 8.15237 19.0797 8.39428C19.1919 8.63619 19.2501 8.89968 19.25 9.16637V17.4164C19.25 17.9026 19.0568 18.3689 18.713 18.7127C18.3692 19.0566 17.9029 19.2497 17.4167 19.2497H4.58333C4.0971 19.2497 3.63079 19.0566 3.28697 18.7127C2.94315 18.3689 2.75 17.9026 2.75 17.4164V9.16637Z" stroke="#55555A" stroke-width="2" stroke-linecap="round"/></svg>`;
 
@@ -18,7 +17,11 @@ const USER = `<svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns=
 export type BottomTab = "home" | "saved" | "week" | "shopping" | "help";
 
 function NavIcon({ xml, active }: { xml: string; active: boolean }) {
-  const colored = xml.replace(/stroke="#[^"]+"/g, `stroke="${active ? ACTIVE : IDLE}"`);
+  const { colors } = useTheme();
+  const colored = xml.replace(
+    /stroke="#[^"]+"/g,
+    `stroke="${active ? colors.brand : colors.muted}"`,
+  );
   return (
     <View style={styles.iconBox}>
       <SvgXml xml={colored} width={22} height={22} />
@@ -34,6 +37,7 @@ export default function BottomNav({
   onChange: (tab: BottomTab) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const tabs: { id: BottomTab; label: string; xml: string }[] = [
     { id: "home", label: "Home", xml: HOME },
     { id: "saved", label: "Saved", xml: BOOKMARK },
@@ -43,7 +47,7 @@ export default function BottomNav({
   ];
 
   return (
-    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, spacing.sm), backgroundColor: colors.surface, borderTopColor: colors.border }]}>
       <View style={styles.tabs}>
         {tabs.map((tab) => {
           const on = active === tab.id;
@@ -51,7 +55,7 @@ export default function BottomNav({
             <Pressable key={tab.id} style={styles.tab} onPress={() => onChange(tab.id)}>
               <NavIcon xml={tab.xml} active={on} />
               <Text
-                style={[styles.label, on ? styles.labelOn : styles.labelOff]}
+                style={[styles.label, { color: on ? colors.brand : colors.muted }, on ? styles.labelOn : styles.labelOff]}
                 numberOfLines={1}
                 allowFontScaling={false}
               >
@@ -67,21 +71,19 @@ export default function BottomNav({
 
 const styles = StyleSheet.create({
   bar: {
-    backgroundColor: "#141416",
     borderTopWidth: 1,
-    borderTopColor: "#28282C",
   },
   tabs: {
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingHorizontal: 6,
+    paddingHorizontal: spacing.xs,
     paddingTop: 12,
-    paddingBottom: 8,
+    paddingBottom: spacing.sm,
   },
   tab: {
     flex: 1,
     alignItems: "center",
-    gap: 4,
+    gap: spacing.xs,
     paddingHorizontal: 2,
   },
   iconBox: { width: 22, height: 22, overflow: "hidden", alignItems: "center", justifyContent: "center" },
@@ -94,6 +96,6 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     paddingHorizontal: 1,
   },
-  labelOn: { color: ACTIVE },
-  labelOff: { color: IDLE, fontFamily: "Inter_400Regular", fontWeight: "500" },
+  labelOn: { fontFamily: fonts.heading },
+  labelOff: { fontFamily: fonts.body, fontWeight: "500" },
 });

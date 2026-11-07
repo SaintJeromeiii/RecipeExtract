@@ -1,15 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Button from "./Button";
 import { IconLink } from "./NewHomeIcons";
-import { colors, fonts, spacing } from "./tokens";
-
-const figma = {
-  accent: "#85B8FF",
-  surface: "#141416",
-  line: "#28282C",
-  muted: "#99999F",
-};
+import { useTheme } from "./Theme";
+import { fonts, spacing, type, type ThemeColors } from "./tokens";
 
 type Props = {
   inputMode?: "url" | "caption";
@@ -40,6 +34,8 @@ export default function NewHomeScreen({
   loading = false,
   error = null,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => homeStyles(colors), [colors]);
   const [localUrl, setLocalUrl] = useState("");
   const [localCaption, setLocalCaption] = useState("");
   const [localMode, setLocalMode] = useState<"url" | "caption">("url");
@@ -94,7 +90,7 @@ export default function NewHomeScreen({
               value={urlValue}
               onChangeText={setUrlValue}
               placeholder="TikTok, Instagram, YouTube, or a recipe blog…"
-              placeholderTextColor={figma.muted}
+              placeholderTextColor={colors.muted}
               style={styles.input}
               autoCapitalize="none"
               autoCorrect={false}
@@ -105,7 +101,7 @@ export default function NewHomeScreen({
               value={captionValue}
               onChangeText={setCaptionValue}
               placeholder={"Ingredients:\n1 cup flour\n...\n\nInstructions:\n1. Mix..."}
-              placeholderTextColor={figma.muted}
+              placeholderTextColor={colors.muted}
               multiline
               style={[styles.input, styles.captionInput]}
               textAlignVertical="top"
@@ -134,7 +130,8 @@ export default function NewHomeScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function homeStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   screen: {
     backgroundColor: colors.bg,
     paddingBottom: spacing.lg,
@@ -142,33 +139,33 @@ const styles = StyleSheet.create({
   inputBlock: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: 8,
-    gap: 8,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
   },
   promptTitle: {
-    color: colors.chromeText,
-    fontSize: 16,
+    color: colors.text,
+    fontSize: type.body,
     fontWeight: "700",
     fontFamily: fonts.heading,
   },
   promptAlt: {
-    color: figma.accent,
+    color: colors.brand,
     fontSize: 14,
     fontWeight: "600",
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   glowInput: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: figma.surface,
-    borderColor: figma.accent,
+    backgroundColor: colors.surface,
+    borderColor: colors.brand,
     borderWidth: 1.5,
     borderRadius: 20,
     padding: spacing.md,
-    shadowColor: figma.accent,
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    shadowColor: colors.brand,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
   },
   glowInputCaption: { alignItems: "flex-start" },
@@ -176,7 +173,7 @@ const styles = StyleSheet.create({
   linkIcon: { width: 20, height: 20, overflow: "hidden" },
   input: {
     flex: 1,
-    color: colors.chromeText,
+    color: colors.text,
     fontSize: 14,
     fontFamily: fonts.body,
     padding: 0,
@@ -185,22 +182,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 8,
+    gap: spacing.sm,
   },
   actionGhost: {
     borderWidth: 1,
-    borderColor: figma.line,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     borderRadius: 999,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  actionGhostText: { color: colors.chromeText, fontWeight: "600" },
+  actionGhostText: { color: colors.text, fontWeight: "600" },
   extractBtn: {
-    backgroundColor: figma.accent,
     borderRadius: 999,
     paddingHorizontal: 18,
     elevation: 0,
     shadowOpacity: 0,
   },
-  error: { color: colors.error, marginTop: 4 },
-});
+  error: { color: colors.error, marginTop: spacing.xs },
+  });
+}

@@ -34,6 +34,7 @@ import {
   removeWeeklyMeal as deleteWeeklyMeal,
   saveRecipe as persistRecipe,
   setAllGroceryChecked as setAllChecked,
+  setGroceryAmount,
   setGroceryCategory,
   setGroceryCategoryOrder as persistCategoryOrder,
   setGroceryChecked,
@@ -261,6 +262,13 @@ export async function setGroceryItemCategory(
   category: GroceryCategory,
 ): Promise<GroceryItem> {
   return setGroceryCategory(id, category);
+}
+
+export async function setGroceryItemAmount(
+  id: string,
+  amount: number,
+): Promise<GroceryItem> {
+  return setGroceryAmount(id, amount);
 }
 
 export async function removeGrocery(id: string): Promise<void> {

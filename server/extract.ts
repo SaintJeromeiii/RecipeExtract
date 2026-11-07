@@ -1,5 +1,9 @@
 import { assertSafeUrl, extractRecipe as extractHtmlRecipe } from "../shared/extract.ts";
-import { recipeFromCaption } from "../shared/captionRecipe.ts";
+import {
+  recipeFromCaption,
+  sanitizeDishTitle,
+  sanitizeExtractedRecipe,
+} from "../shared/captionRecipe.ts";
 import { CAPTION_FALLBACK, recipeLooksEmpty } from "../shared/recipeQuality.ts";
 import {
   fetchOEmbedCaption,
@@ -22,7 +26,7 @@ function emptyRecipe(sourceUrl: string, extras?: SocialCaption): Recipe {
     sourceName = socialPlatform(sourceUrl);
   }
   return {
-    title: extras?.title?.trim() || "Social recipe",
+    title: sanitizeDishTitle(extras?.title || "") || "Social recipe",
     description: null,
     image: extras?.image ?? null,
     author: extras?.author ?? null,
@@ -41,9 +45,15 @@ async function refineWithGemini(recipe: Recipe, caption: string): Promise<Recipe
   const key = process.env.GEMINI_API_KEY?.trim();
   if (!key) return recipe;
 
-  const prompt = `Extract a clean cooking recipe as JSON from this social media caption.
+  const prompt = `Clean this social-media caption into a cooking recipe.
 Return ONLY JSON with keys: title (string), ingredients (string[]), steps (string[]).
-If the caption is not a recipe, return empty arrays for ingredients and steps.
+
+Rules:
+- title: a short dish name only. Do not use the video title if it includes macros, calories, protein/carb/fat stats, hashtags, "|", the creator name, or phrases like "high protein" or "viral".
+- ingredients: shoppable cooking ingredients only, with amounts when the caption has them. One ingredient per array item.
+- Exclude: macros, calories, protein/carb/fat numbers, hashtags, "follow for more", "link in bio", music credits, and the video title if it is not an ingredient.
+- steps: cooking actions only. Omit nutrition, CTAs, and filler.
+- If the caption is not a recipe, return empty arrays for ingredients and steps.
 Caption:
 ${caption.slice(0, 8000)}`;
 
@@ -77,7 +87,7 @@ ${caption.slice(0, 8000)}`;
     const steps = Array.isArray(parsed.steps) && parsed.steps.length
       ? parsed.steps.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       : recipe.steps;
-    return {
+    return sanitizeExtractedRecipe({
       ...recipe,
       title:
         typeof parsed.title === "string" && parsed.title.trim()
@@ -85,7 +95,7 @@ ${caption.slice(0, 8000)}`;
           : recipe.title,
       ingredients,
       steps,
-    };
+    });
   } catch {
     return recipe;
   }
@@ -148,9 +158,11 @@ async function recipeFromSocialCaption(
       author: caption.author,
       image: caption.image,
     });
-    return refineWithGemini(base, caption.caption);
+    return sanitizeExtractedRecipe(await refineWithGemini(base, caption.caption));
   } catch (parseError) {
-    const draft = await refineWithGemini(emptyRecipe(sourceUrl, caption), caption.caption);
+    const draft = sanitizeExtractedRecipe(
+      await refineWithGemini(emptyRecipe(sourceUrl, caption), caption.caption),
+    );
     if (draft.ingredients.length || draft.steps.length > 1) {
       return draft;
     }
@@ -186,5 +198,7 @@ export async function extractRecipeFromText(
     throw new Error("Paste the recipe caption text to continue.");
   }
   const base = recipeFromCaption(trimmed, sourceUrl);
-  return requireUsableRecipe(await refineWithGemini(base, trimmed));
+  return requireUsableRecipe(
+    sanitizeExtractedRecipe(await refineWithGemini(base, trimmed)),
+  );
 }
