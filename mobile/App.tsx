@@ -1456,9 +1456,9 @@ function AppInner() {
                         </Pressable>
                       </View>
                       {group.items.map((item) => (
-                        <View key={item.id} style={styles.checkRow}>
+                        <View key={item.id} style={styles.groceryItem}>
                           <Pressable
-                            style={{ flex: 1, flexDirection: "row", gap: 8, minWidth: 0 }}
+                            style={styles.groceryItemMain}
                             onPress={() => {
                               void setGroceryItemChecked(item.id, !item.checked).then(
                                 (updated) => {
@@ -1472,85 +1472,87 @@ function AppInner() {
                             }}
                           >
                             <Check checked={item.checked} />
-                            <Text style={styles.checkLabel}>{item.label}</Text>
+                            <Text style={[styles.checkLabel, styles.groceryItemTitle]}>{item.label}</Text>
                           </Pressable>
-                          <View style={styles.groceryQty}>
-                            <Pressable
-                              disabled={item.amount == null || item.amount <= 1}
-                              onPress={() =>
-                                void handleGroceryAmount(
-                                  item,
-                                  steppedGroceryAmount(item.amount, -1),
-                                )
-                              }
-                            >
-                              <Text
+                          <View style={styles.groceryItemMeta}>
+                            <View style={styles.groceryQty}>
+                              <Pressable
+                                disabled={item.amount == null || item.amount <= 1}
+                                onPress={() =>
+                                  void handleGroceryAmount(
+                                    item,
+                                    steppedGroceryAmount(item.amount, -1),
+                                  )
+                                }
                                 style={[
                                   styles.groceryQtyBtn,
                                   (item.amount == null || item.amount <= 1) && styles.disabled,
                                 ]}
                               >
-                                −
-                              </Text>
-                            </Pressable>
-                            <TextInput
-                              style={styles.groceryQtyInput}
-                              value={
-                                groceryQtyDraft?.id === item.id
-                                  ? groceryQtyDraft.value
-                                  : item.amount == null
-                                    ? ""
-                                    : formatAmount(item.amount)
-                              }
-                              placeholder="qty"
-                              placeholderTextColor={colors.muted}
-                              keyboardType="decimal-pad"
-                              selectTextOnFocus
-                              onFocus={() =>
-                                setGroceryQtyDraft({
-                                  id: item.id,
-                                  value: item.amount == null ? "" : formatAmount(item.amount),
-                                })
-                              }
-                              onChangeText={(value) =>
-                                setGroceryQtyDraft({ id: item.id, value })
-                              }
-                              onEndEditing={(event) => {
-                                const parsed = Number(
-                                  String(event.nativeEvent.text).replace(",", "."),
-                                );
-                                setGroceryQtyDraft(null);
-                                if (!Number.isFinite(parsed) || parsed <= 0) return;
-                                void handleGroceryAmount(item, parsed);
-                              }}
-                            />
-                            <Pressable
-                              onPress={() =>
-                                void handleGroceryAmount(
-                                  item,
-                                  steppedGroceryAmount(item.amount, 1),
-                                )
-                              }
-                            >
-                              <Text style={styles.groceryQtyBtn}>+</Text>
-                            </Pressable>
+                                <Text style={styles.groceryQtyBtnText}>−</Text>
+                              </Pressable>
+                              <TextInput
+                                style={styles.groceryQtyInput}
+                                value={
+                                  groceryQtyDraft?.id === item.id
+                                    ? groceryQtyDraft.value
+                                    : item.amount == null
+                                      ? ""
+                                      : formatAmount(item.amount)
+                                }
+                                placeholder="qty"
+                                placeholderTextColor={colors.muted}
+                                keyboardType="decimal-pad"
+                                selectTextOnFocus
+                                onFocus={() =>
+                                  setGroceryQtyDraft({
+                                    id: item.id,
+                                    value: item.amount == null ? "" : formatAmount(item.amount),
+                                  })
+                                }
+                                onChangeText={(value) =>
+                                  setGroceryQtyDraft({ id: item.id, value })
+                                }
+                                onEndEditing={(event) => {
+                                  const parsed = Number(
+                                    String(event.nativeEvent.text).replace(",", "."),
+                                  );
+                                  setGroceryQtyDraft(null);
+                                  if (!Number.isFinite(parsed) || parsed <= 0) return;
+                                  void handleGroceryAmount(item, parsed);
+                                }}
+                              />
+                              <Pressable
+                                onPress={() =>
+                                  void handleGroceryAmount(
+                                    item,
+                                    steppedGroceryAmount(item.amount, 1),
+                                  )
+                                }
+                                style={styles.groceryQtyBtn}
+                              >
+                                <Text style={styles.groceryQtyBtnText}>+</Text>
+                              </Pressable>
+                            </View>
+                            <View style={styles.groceryItemLinks}>
+                              <Pressable onPress={() => setAssigningItem(item)}>
+                                <Text style={styles.groceryCatChip}>
+                                  {groceryCategoryLabel(itemGroceryCategory(item))}
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                onPress={() => {
+                                  void removeGrocery(item.id).then(() => {
+                                    setGrocery((current) =>
+                                      current.filter((row) => row.id !== item.id),
+                                    );
+                                  });
+                                }}
+                              >
+                                <Text style={styles.groceryRemove}>Remove</Text>
+                              </Pressable>
+                            </View>
                           </View>
-                          <Pressable onPress={() => setAssigningItem(item)}>
-                            <Text style={styles.groceryCatChip}>
-                              {groceryCategoryLabel(itemGroceryCategory(item))}
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() => {
-                              void removeGrocery(item.id).then(() => {
-                                setGrocery((current) =>
-                                  current.filter((row) => row.id !== item.id),
-                                );
-                              });
-                            }}
-                          >
-                            <Text style={styles.groceryRemove}>Remove</Text>
-                          </Pressable>
                         </View>
                       ))}
                     </View>
@@ -2074,37 +2076,52 @@ function createAppStyles(colors: ThemeColors) {
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
+  groceryItem: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    gap: 8,
+  },
+  groceryItemMain: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  groceryItemTitle: { flex: 1 },
+  groceryItemMeta: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    paddingLeft: 32,
+    gap: 8,
+  },
+  groceryItemLinks: { flexDirection: "row", alignItems: "center", gap: 10, flexShrink: 0 },
   groceryQty: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
     flexShrink: 0,
   },
   groceryQtyBtn: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: "700",
+    width: 32,
+    height: 32,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
-    overflow: "hidden",
-    minWidth: 28,
-    textAlign: "center",
-    paddingVertical: 2,
+    backgroundColor: colors.paper,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  groceryQtyBtnText: { color: colors.text, fontSize: 18, fontWeight: "700", lineHeight: 20 },
   groceryQtyInput: {
-    minWidth: 40,
-    maxWidth: 52,
+    width: 48,
+    height: 32,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 4,
-    paddingVertical: 4,
+    paddingVertical: 0,
     color: colors.text,
     backgroundColor: colors.paper,
     textAlign: "center",
     fontWeight: "700",
-    fontSize: 14,
+    fontSize: 16,
   },
   groceryRemove: { color: colors.text, fontWeight: "700", fontSize: 14 },
   groceryAdd: { flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 10 },

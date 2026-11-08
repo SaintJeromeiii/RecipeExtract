@@ -165,11 +165,25 @@ export async function extractRecipe(url: string): Promise<Recipe> {
       throw apiError;
     }
   }
-  const pageRecipe = await extractFromPage(normalized);
-  if (recipeLooksEmpty(pageRecipe)) {
-    throw new Error(CAPTION_FALLBACK);
+  try {
+    const pageRecipe = await extractFromPage(normalized);
+    if (recipeLooksEmpty(pageRecipe)) {
+      throw new Error(CAPTION_FALLBACK);
+    }
+    return pageRecipe;
+  } catch (error) {
+    if (!shouldFallbackToApi(error)) throw error;
+    try {
+      return await extractViaApi(normalized);
+    } catch {
+      throw error;
+    }
   }
-  return pageRecipe;
+}
+
+function shouldFallbackToApi(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /103|incomplete page|responded with 1\d\d/i.test(message);
 }
 
 export async function extractRecipeFromCaption(

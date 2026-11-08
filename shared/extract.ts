@@ -230,7 +230,39 @@ function httpErrorMessage(status: number): string {
   if (status === 401 || status === 403) {
     return "That site blocked the extractor. Try a different recipe URL.";
   }
+  if (status === 103 || (status >= 100 && status < 200)) {
+    return "That site sent an incomplete page. Try again, or paste the recipe text.";
+  }
   return `The site responded with ${status}.`;
+}
+
+function isInformationalStatus(status: number): boolean {
+  return status === 103 || (status >= 100 && status < 200);
+}
+
+async function fetchRecipePage(url: URL, signal: AbortSignal): Promise<Response> {
+  const headerSets: Record<string, string>[] = [
+    FETCH_HEADERS,
+    {
+      "User-Agent": FETCH_HEADERS["User-Agent"],
+      Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+    {
+      "User-Agent": "Mozilla/5.0",
+      Accept: "text/html",
+    },
+  ];
+  let last: Response | null = null;
+  for (const [index, headers] of headerSets.entries()) {
+    last = await fetch(url, { headers, signal, redirect: "follow" });
+    if (last.ok) return last;
+    if (!isInformationalStatus(last.status)) return last;
+    if (index < headerSets.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250 * (index + 1)));
+    }
+  }
+  return last!;
 }
 
 function fromJsonLd(data: Record<string, unknown>, sourceUrl: string): Recipe {
@@ -484,11 +516,7 @@ export async function extractRecipe(sourceUrl: string): Promise<Recipe> {
   const timeout = setTimeout(() => controller.abort(), 15000);
   let response: Response;
   try {
-    response = await fetch(url, {
-      headers: FETCH_HEADERS,
-      signal: controller.signal,
-      redirect: "follow",
-    });
+    response = await fetchRecipePage(url, controller.signal);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("The recipe page took too long to load.");

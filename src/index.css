@@ -577,10 +577,10 @@ a {
 
 .grocery-group li {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.7rem;
-  padding: 0.6rem 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.7rem 0;
   border-top: 1px solid rgba(20, 32, 24, 0.1);
 }
 
@@ -602,25 +602,36 @@ a {
 
 .grocery-item-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.55rem 0.75rem;
+  padding-left: 1.65rem;
+}
+
+.grocery-item-links {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   flex-shrink: 0;
 }
 
 .grocery-qty {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.35rem;
 }
 
 .grocery-qty button {
-  min-width: 1.7rem;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  flex-shrink: 0;
   border: 1px solid rgba(20, 32, 24, 0.14);
   background: var(--paper);
   color: var(--ink);
-  border-radius: 0.45rem;
+  border-radius: 0.5rem;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1;
 }
 
 .grocery-qty button:disabled {
@@ -628,15 +639,16 @@ a {
 }
 
 .grocery-qty-input {
-  width: 2.6rem;
+  width: 3rem;
+  height: 2rem;
   border: 1px solid rgba(20, 32, 24, 0.14);
   background: var(--paper);
   color: var(--ink);
-  border-radius: 0.45rem;
+  border-radius: 0.5rem;
   text-align: center;
   font-weight: 700;
-  font-size: 0.85rem;
-  padding: 0.18rem 0.2rem;
+  font-size: 0.95rem;
+  padding: 0;
 }
 
 .grocery-cat-label {

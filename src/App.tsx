@@ -1665,6 +1665,9 @@ function GroceryPanel({
                               }
                               onAmount(item, parsed);
                             }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.currentTarget.blur();
+                            }}
                           />
                           <button
                             type="button"
@@ -1674,25 +1677,27 @@ function GroceryPanel({
                             +
                           </button>
                         </div>
-                        <label className="grocery-cat-label">
-                          <span className="visually-hidden">Move {item.label} to aisle</span>
-                          <select
-                            className="grocery-cat"
-                            value={itemGroceryCategory(item)}
-                            onChange={(event) =>
-                              onCategory(item, event.target.value as GroceryCategory)
-                            }
-                          >
-                            {categoryOrder.map((category) => (
-                              <option key={category} value={category}>
-                                {groceryCategoryLabel(category)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <button className="text-btn" onClick={() => onRemove(item.id)}>
-                          Remove
-                        </button>
+                        <div className="grocery-item-links">
+                          <label className="grocery-cat-label">
+                            <span className="visually-hidden">Move {item.label} to aisle</span>
+                            <select
+                              className="grocery-cat"
+                              value={itemGroceryCategory(item)}
+                              onChange={(event) =>
+                                onCategory(item, event.target.value as GroceryCategory)
+                              }
+                            >
+                              {categoryOrder.map((category) => (
+                                <option key={category} value={category}>
+                                  {groceryCategoryLabel(category)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <button className="text-btn" onClick={() => onRemove(item.id)}>
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     </li>
                   ))}
